@@ -1,0 +1,79 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Alioth Backend Development Rules
+
+You are developing the backend for Alioth, an AI-driven cross-chain DeFi platform using NestJS.
+
+## Architecture Guidelines
+
+### Project Structure
+- Use modular architecture with feature-based modules in `/src/modules/`
+- Separate shared services in `/src/shared/` 
+- Place common utilities in `/src/common/`
+- Follow the established folder structure with controllers, services, DTOs, and schemas
+
+### Code Patterns
+- Use dependency injection throughout the application
+- Implement proper error handling with custom filters
+- Apply validation pipes for all DTOs using class-validator
+- Use guards for authentication and authorization
+- Implement interceptors for request/response transformation
+
+### Database (MongoDB)
+- Use Mongoose schemas with proper decorators (@Prop, @Schema)
+- Include timestamps and proper indexing
+- Implement proper query optimization
+- Use transactions for complex operations
+
+### API Development
+- Follow RESTful conventions for all endpoints
+- Use Swagger/OpenAPI documentation (@ApiOperation, @ApiResponse)
+- Implement proper pagination with PaginationDto
+- Return consistent response formats
+- Use proper HTTP status codes
+
+### Authentication & Security
+- Implement JWT-based authentication with refresh tokens
+- Use wallet signature verification for Web3 authentication
+- Apply rate limiting guards where appropriate
+- Validate all inputs with class-validator
+- Implement role-based access control (RBAC)
+
+### WebSocket Integration
+- Use @WebSocketGateway for real-time features
+- Implement proper connection/disconnection handlers
+- Organize real-time events by feature domains
+- Handle connection authentication and authorization
+
+### Blockchain Integration
+- Create service abstractions for Web3 interactions
+- Implement proper error handling for blockchain operations
+- Use event listeners for on-chain events
+- Implement transaction monitoring and retry logic
+
+### Agent Integration
+- Create separate services for each AI agent type
+- Use job queues (Bull) for background processing
+- Implement proper logging for agent operations
+- Use MongoDB to store agent execution logs and state
+
+### Performance & Quality
+- Implement caching with Redis where appropriate
+- Use database indexing for query optimization
+- Use TypeScript strict mode
+- Follow consistent naming conventions (camelCase for variables, PascalCase for classes)
+- Keep functions focused and single-purpose
+
+### Environment & Configuration
+- Use @nestjs/config for environment management
+- Validate environment variables at startup
+- Keep sensitive data in environment variables
+
+### Cross-Repository Integration
+- Backend APIs should align with smart contract events and frontend needs
+- Use consistent TypeScript types across all Alioth repositories
+- Implement proper CORS configuration for frontend integration
+- Provide WebSocket endpoints for real-time contract event updates

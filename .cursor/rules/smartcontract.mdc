@@ -1,0 +1,86 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Alioth Smart Contract Development Rules
+
+You are developing smart contracts for Alioth, an AI-driven cross-chain DeFi platform using Solidity and Foundry.
+
+## Development Guidelines
+
+### Project Structure
+- Use Foundry framework for contract development
+- Organize contracts by category: Core, Adapters, Oracles, Cross-Chain, Automation, Utilities
+- Place interfaces in separate files with `I` prefix
+- Use libraries for reusable mathematical and validation logic
+- Implement proper deployment scripts in `/script/`
+
+### Solidity Best Practices
+- Use Solidity ^0.8.19 for all contracts
+- Implement proper access control with OpenZeppelin's AccessControl
+- Use ReentrancyGuard for all external functions that handle funds
+- Apply SafeERC20 for all token interactions
+- Use custom errors instead of string-based reverts
+
+### Security Patterns
+- Implement checks-effects-interactions pattern
+- Use reentrancy guards on all external functions
+- Validate all inputs with custom validation library
+- Implement emergency stop mechanisms
+- Use multi-signature for admin functions
+
+### Access Control
+- Define specific roles: REBALANCER_ROLE, HARVESTER_ROLE, UNDERWRITER_ROLE, LIQUIDATOR_ROLE
+- Use role-based access control (RBAC) throughout
+- Implement timelock for critical parameter updates
+- Use DEFAULT_ADMIN_ROLE sparingly and with multi-sig
+
+### DeFi Integration
+- Create uniform adapter interfaces (IProtocolAdapter)
+- Implement proper slippage protection
+- Use Chainlink price feeds for all price data
+- Handle protocol-specific errors gracefully
+- Implement fallback mechanisms for protocol failures
+
+### Cross-Chain Integration
+- Use Chainlink CCIP for cross-chain messaging
+- Implement proper message validation and authentication
+- Handle cross-chain failures with retry mechanisms
+- Use chain selectors for multi-chain operations
+- Implement proper gas estimation for cross-chain calls
+
+### Oracle Integration
+- Use Chainlink Data Feeds for price data
+- Implement staleness checks for all oracle data
+- Use multiple price sources where possible
+- Implement fallback oracle mechanisms
+- Use Chainlink Functions for off-chain data integration
+
+### Gas Optimization
+- Use packed structs where appropriate
+- Implement efficient storage patterns
+- Use events for off-chain data retrieval
+- Optimize loops and avoid unbounded loops
+- Use view functions for read-only operations
+
+### Testing Strategy
+- Write comprehensive unit tests for all functions
+- Test edge cases and failure scenarios
+- Use fuzzing for mathematical functions
+- Test integration with external protocols
+- Implement gas usage benchmarks
+
+### Documentation
+- Use NatSpec comments for all public functions
+- Document complex mathematical operations
+- Explain access control requirements
+- Document integration requirements
+- Include usage examples in comments
+
+### Cross-Repository Integration
+- Emit events that backend can listen to and process
+- Design interfaces that frontend can easily interact with via wagmi/viem
+- Use consistent naming conventions that match backend API endpoints
+- Generate TypeScript types from contracts for frontend consumption
+- Ensure contract deployment addresses are easily configurable across environments
