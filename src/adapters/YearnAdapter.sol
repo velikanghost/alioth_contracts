@@ -3,35 +3,67 @@ pragma solidity ^0.8.19;
 
 import "@solmate/tokens/ERC20.sol";
 import "@solmate/utils/SafeTransferLib.sol";
-import "@solmate/utils/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IProtocolAdapter.sol";
 import "../libraries/ValidationLib.sol";
 import "../libraries/MathLib.sol";
 
 // Yearn interfaces
 interface IYearnVault {
-    function deposit(uint256 amount, address recipient) external returns (uint256);
-    function withdraw(uint256 shares, address recipient, uint256 maxLoss) external returns (uint256);
-    function redeem(uint256 shares, address recipient, address owner) external returns (uint256);
+    function deposit(
+        uint256 amount,
+        address recipient
+    ) external returns (uint256);
+
+    function withdraw(
+        uint256 shares,
+        address recipient,
+        uint256 maxLoss
+    ) external returns (uint256);
+
+    function redeem(
+        uint256 shares,
+        address recipient,
+        address owner
+    ) external returns (uint256);
+
     function balanceOf(address account) external view returns (uint256);
+
     function totalSupply() external view returns (uint256);
+
     function totalAssets() external view returns (uint256);
+
     function convertToShares(uint256 assets) external view returns (uint256);
+
     function convertToAssets(uint256 shares) external view returns (uint256);
+
     function previewDeposit(uint256 assets) external view returns (uint256);
+
     function previewWithdraw(uint256 assets) external view returns (uint256);
+
     function asset() external view returns (address);
+
     function decimals() external view returns (uint8);
+
     function pricePerShare() external view returns (uint256);
+
     function depositLimit() external view returns (uint256);
+
     function availableDepositLimit() external view returns (uint256);
+
     function withdrawalQueue(uint256 index) external view returns (address);
+
     function lastReport() external view returns (uint256);
 }
 
 interface IYearnRegistry {
     function latestVault(address token) external view returns (address);
-    function vaults(address token, uint256 index) external view returns (address);
+
+    function vaults(
+        address token,
+        uint256 index
+    ) external view returns (address);
+
     function numVaults(address token) external view returns (uint256);
 }
 
@@ -48,28 +80,28 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
 
     /// @notice Yearn Registry contract
     IYearnRegistry public immutable yearnRegistry;
-    
+
     /// @notice Mapping of token to preferred vault address
     mapping(address => address) public vaults;
-    
+
     /// @notice Mapping of supported tokens
     mapping(address => bool) public supportedTokens;
-    
+
     /// @notice Administrator address
     address public admin;
-    
+
     /// @notice Emergency stop flag
     bool public emergencyStop;
-    
+
     /// @notice Maximum withdrawal loss tolerance (in basis points)
     uint256 public maxLoss = 100; // 1% default
-    
+
     /// @notice APY calculation period (1 week in seconds)
     uint256 public constant APY_PERIOD = 7 days;
-    
+
     /// @notice Minimum time between APY updates
     uint256 public constant MIN_APY_UPDATE_INTERVAL = 1 hours;
-    
+
     /// @notice Cached APY data
     mapping(address => uint256) public cachedAPY;
     mapping(address => uint256) public lastAPYUpdate;
@@ -89,7 +121,7 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
     constructor(address _yearnRegistry, address _admin) {
         _yearnRegistry.validateAddress();
         _admin.validateAddress();
-        
+
         yearnRegistry = IYearnRegistry(_yearnRegistry);
         admin = _admin;
     }
@@ -109,35 +141,36 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      */
     function getAPY(address token) external view returns (uint256 apy) {
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         require(vaultAddr != address(0), "Vault not configured");
-        
+
         IYearnVault vault = IYearnVault(vaultAddr);
-        
+
         // Use cached APY if recently updated
         if (block.timestamp - lastAPYUpdate[token] < MIN_APY_UPDATE_INTERVAL) {
             return cachedAPY[token];
         }
-        
+
         try vault.totalAssets() returns (uint256 totalAssets) {
             try vault.totalSupply() returns (uint256 totalSupply) {
                 if (totalSupply == 0 || totalAssets == 0) {
                     return 0;
                 }
-                
+
                 // Calculate APY based on price per share growth
                 // This is a simplified calculation - in production would use historical data
                 try vault.pricePerShare() returns (uint256 currentPPS) {
                     // Assume historical price per share for APY calculation
                     // In production, this would come from stored historical data or oracle
-                    uint256 historicalPPS = currentPPS * 9800 / 10000; // Assume 2% growth for demo
-                    
+                    uint256 historicalPPS = (currentPPS * 9800) / 10000; // Assume 2% growth for demo
+
                     if (historicalPPS > 0 && currentPPS > historicalPPS) {
                         // Calculate APY: ((currentPPS / historicalPPS) - 1) * (365 / 7) * 10000
-                        uint256 growthRate = (currentPPS * 10000 / historicalPPS) - 10000;
-                        apy = growthRate * 365 / 7; // Annualize weekly growth
-                        
+                        uint256 growthRate = ((currentPPS * 10000) /
+                            historicalPPS) - 10000;
+                        apy = (growthRate * 365) / 7; // Annualize weekly growth
+
                         // Cap at reasonable maximum (50%)
                         if (apy > 5000) apy = 5000;
                     }
@@ -159,11 +192,11 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      */
     function getTVL(address token) external view returns (uint256 tvl) {
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         if (vaultAddr != address(0)) {
             IYearnVault vault = IYearnVault(vaultAddr);
-            
+
             try vault.balanceOf(address(this)) returns (uint256 shares) {
                 if (shares > 0) {
                     try vault.convertToAssets(shares) returns (uint256 assets) {
@@ -171,7 +204,7 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
                     } catch {
                         // Fallback calculation using price per share
                         try vault.pricePerShare() returns (uint256 pps) {
-                            tvl = shares * pps / 1e18;
+                            tvl = (shares * pps) / 1e18;
                         } catch {
                             tvl = 0;
                         }
@@ -190,36 +223,42 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param minShares Minimum shares expected to prevent slippage
      * @return shares The number of shares received (vault tokens)
      */
-    function deposit(address token, uint256 amount, uint256 minShares) 
-        external nonReentrant whenNotStopped returns (uint256 shares) {
+    function deposit(
+        address token,
+        uint256 amount,
+        uint256 minShares
+    ) external payable nonReentrant whenNotStopped returns (uint256 shares) {
+        require(msg.value == 0, "ETH not supported");
         token.validateAddress();
         amount.validateAmount();
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         require(vaultAddr != address(0), "Vault not configured");
-        
+
         IYearnVault vault = IYearnVault(vaultAddr);
-        
+
         // Check deposit limits
         try vault.availableDepositLimit() returns (uint256 availableLimit) {
             require(amount <= availableLimit, "Deposit exceeds vault limit");
         } catch {
             // Continue if limit check fails - vault might not implement this
         }
-        
+
         // Transfer tokens from caller
         ERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        
+
         // Approve vault to spend tokens
         ERC20(token).safeApprove(vaultAddr, amount);
-        
-        try vault.deposit(amount, address(this)) returns (uint256 receivedShares) {
+
+        try vault.deposit(amount, address(this)) returns (
+            uint256 receivedShares
+        ) {
             shares = receivedShares;
-            
+
             // Validate minimum shares received
             ValidationLib.validateSlippage(minShares, shares, 500); // 5% max slippage
-            
+
             emit Deposited(token, amount, shares);
         } catch Error(string memory reason) {
             revert(string(abi.encodePacked("Yearn deposit failed: ", reason)));
@@ -233,39 +272,50 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param minAmount Minimum amount expected to prevent slippage
      * @return amount The amount of tokens received
      */
-    function withdraw(address token, uint256 shares, uint256 minAmount) 
-        external nonReentrant whenNotStopped returns (uint256 amount) {
+    function withdraw(
+        address token,
+        uint256 shares,
+        uint256 minAmount
+    ) external nonReentrant whenNotStopped returns (uint256 amount) {
         token.validateAddress();
         shares.validateAmount();
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         require(vaultAddr != address(0), "Vault not configured");
-        
+
         IYearnVault vault = IYearnVault(vaultAddr);
-        
+
         // Check if we have enough vault shares
         uint256 vaultBalance = vault.balanceOf(address(this));
         require(vaultBalance >= shares, "Insufficient vault shares");
-        
-        try vault.redeem(shares, msg.sender, address(this)) returns (uint256 receivedAmount) {
+
+        try vault.redeem(shares, msg.sender, address(this)) returns (
+            uint256 receivedAmount
+        ) {
             amount = receivedAmount;
-            
+
             // Validate minimum amount received
             ValidationLib.validateSlippage(minAmount, amount, maxLoss);
-            
+
             emit Withdrawn(token, amount, shares);
         } catch {
             // Fallback to withdraw function if redeem fails
-            try vault.withdraw(shares, msg.sender, maxLoss) returns (uint256 receivedAmount) {
+            try vault.withdraw(shares, msg.sender, maxLoss) returns (
+                uint256 receivedAmount
+            ) {
                 amount = receivedAmount;
-                
+
                 // Validate minimum amount received
                 ValidationLib.validateSlippage(minAmount, amount, maxLoss);
-                
+
                 emit Withdrawn(token, amount, shares);
             } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Yearn withdrawal failed: ", reason)));
+                revert(
+                    string(
+                        abi.encodePacked("Yearn withdrawal failed: ", reason)
+                    )
+                );
             }
         }
     }
@@ -275,22 +325,26 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param token The token to harvest yield for
      * @return yieldAmount The amount of yield harvested
      */
-    function harvestYield(address token) external returns (uint256 yieldAmount) {
+    function harvestYield(
+        address token
+    ) external returns (uint256 yieldAmount) {
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         require(vaultAddr != address(0), "Vault not configured");
-        
+
         IYearnVault vault = IYearnVault(vaultAddr);
-        
+
         // Calculate unrealized yield (vault shares appreciation)
         uint256 currentShares = vault.balanceOf(address(this));
         if (currentShares > 0) {
-            try vault.convertToAssets(currentShares) returns (uint256 currentValue) {
+            try vault.convertToAssets(currentShares) returns (
+                uint256 currentValue
+            ) {
                 // This is a simplified yield calculation
                 // In practice, we'd track the original deposit amount
                 yieldAmount = 0; // Yearn vaults auto-compound, so yield is in share appreciation
-                
+
                 emit YieldHarvested(token, yieldAmount);
             } catch {
                 yieldAmount = 0;
@@ -307,7 +361,9 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param token The token address to check
      * @return supported True if the token is supported
      */
-    function supportsToken(address token) external view returns (bool supported) {
+    function supportsToken(
+        address token
+    ) external view returns (bool supported) {
         return supportedTokens[token];
     }
 
@@ -316,9 +372,11 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param token The token address
      * @return shares The current shares balance (vault token balance)
      */
-    function getSharesBalance(address token) external view returns (uint256 shares) {
+    function getSharesBalance(
+        address token
+    ) external view returns (uint256 shares) {
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         if (vaultAddr != address(0)) {
             IYearnVault vault = IYearnVault(vaultAddr);
@@ -332,19 +390,22 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param shares The number of shares (vault token amount)
      * @return amount The equivalent token amount
      */
-    function sharesToTokens(address token, uint256 shares) external view returns (uint256 amount) {
+    function sharesToTokens(
+        address token,
+        uint256 shares
+    ) external view returns (uint256 amount) {
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         if (vaultAddr != address(0) && shares > 0) {
             IYearnVault vault = IYearnVault(vaultAddr);
-            
+
             try vault.convertToAssets(shares) returns (uint256 assets) {
                 amount = assets;
             } catch {
                 // Fallback calculation using price per share
                 try vault.pricePerShare() returns (uint256 pps) {
-                    amount = shares * pps / 1e18;
+                    amount = (shares * pps) / 1e18;
                 } catch {
                     amount = 0;
                 }
@@ -358,20 +419,23 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param amount The token amount
      * @return shares The equivalent number of shares
      */
-    function tokensToShares(address token, uint256 amount) external view returns (uint256 shares) {
+    function tokensToShares(
+        address token,
+        uint256 amount
+    ) external view returns (uint256 shares) {
         require(supportedTokens[token], "Token not supported");
-        
+
         address vaultAddr = vaults[token];
         if (vaultAddr != address(0) && amount > 0) {
             IYearnVault vault = IYearnVault(vaultAddr);
-            
+
             try vault.convertToShares(amount) returns (uint256 vaultShares) {
                 shares = vaultShares;
             } catch {
                 // Fallback calculation using price per share
                 try vault.pricePerShare() returns (uint256 pps) {
                     if (pps > 0) {
-                        shares = amount * 1e18 / pps;
+                        shares = (amount * 1e18) / pps;
                     }
                 } catch {
                     shares = 0;
@@ -387,19 +451,22 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param token The token address
      * @param vault The corresponding vault address
      */
-    function addSupportedToken(address token, address vault) external onlyAdmin {
+    function addSupportedToken(
+        address token,
+        address vault
+    ) external onlyAdmin {
         token.validateAddress();
         vault.validateAddress();
-        
+
         IYearnVault vaultContract = IYearnVault(vault);
-        
+
         // Validate vault corresponds to token
         try vaultContract.asset() returns (address vaultAsset) {
             require(vaultAsset == token, "Token/vault mismatch");
         } catch {
             revert("Invalid vault");
         }
-        
+
         supportedTokens[token] = true;
         vaults[token] = vault;
     }
@@ -410,10 +477,10 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      */
     function addSupportedTokenFromRegistry(address token) external onlyAdmin {
         token.validateAddress();
-        
+
         try yearnRegistry.latestVault(token) returns (address latestVault) {
             require(latestVault != address(0), "No vault found in registry");
-            
+
             // Validate the vault
             IYearnVault vaultContract = IYearnVault(latestVault);
             try vaultContract.asset() returns (address vaultAsset) {
@@ -421,7 +488,7 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
             } catch {
                 revert("Invalid registry vault");
             }
-            
+
             supportedTokens[token] = true;
             vaults[token] = latestVault;
         } catch {
@@ -446,7 +513,7 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      */
     function updateAPY(address token) external {
         require(supportedTokens[token], "Token not supported");
-        
+
         // Force APY recalculation by calling getAPY
         uint256 newAPY = this.getAPY(token);
         cachedAPY[token] = newAPY;
@@ -474,7 +541,10 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
      * @param token Token to withdraw
      * @param amount Amount to withdraw
      */
-    function emergencyWithdraw(address token, uint256 amount) external onlyAdmin {
+    function emergencyWithdraw(
+        address token,
+        uint256 amount
+    ) external onlyAdmin {
         require(emergencyStop, "Emergency stop not active");
         ERC20(token).safeTransfer(admin, amount);
     }
@@ -487,4 +557,4 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
         newAdmin.validateAddress();
         admin = newAdmin;
     }
-} 
+}

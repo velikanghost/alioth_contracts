@@ -3,9 +3,9 @@ pragma solidity ^0.8.19;
 
 import "@solmate/tokens/ERC20.sol";
 import "@solmate/utils/SafeTransferLib.sol";
-import "@solmate/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import "../interfaces/IYieldOptimizer.sol";
 import "../interfaces/IProtocolAdapter.sol";
 import "../interfaces/ICCIPMessenger.sol";
@@ -17,7 +17,11 @@ import "../libraries/MathLib.sol";
  * @notice AI-driven yield optimization system for Alioth platform
  * @dev Manages allocation across multiple protocols and chains for optimal yield
  */
-contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, ReentrancyGuard {
+contract YieldOptimizer is
+    IYieldOptimizer,
+    AutomationCompatibleInterface,
+    ReentrancyGuard
+{
     using SafeTransferLib for ERC20;
     using ValidationLib for uint256;
     using ValidationLib for address;
@@ -25,19 +29,19 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
 
     /// @notice Role for AI agents that can trigger rebalances
     bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
-    
+
     /// @notice Role for yield harvesters
     bytes32 public constant HARVESTER_ROLE = keccak256("HARVESTER_ROLE");
-    
+
     /// @notice Role for emergency operations
     bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
 
     /// @notice Maximum number of protocols to support
     uint256 public constant MAX_PROTOCOLS = 20;
-    
+
     /// @notice Minimum rebalance threshold (in basis points)
     uint256 public constant MIN_REBALANCE_THRESHOLD = 50; // 0.5%
-    
+
     /// @notice Maximum slippage allowed (in basis points)
     uint256 public constant MAX_SLIPPAGE = 500; // 5%
 
@@ -58,28 +62,28 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
 
     /// @notice Mapping of protocol adapter addresses to protocol info
     mapping(address => ProtocolInfo) public protocols;
-    
+
     /// @notice Array of active protocol addresses
     address[] public activeProtocols;
-    
+
     /// @notice Mapping of token to allocation data
     mapping(address => TokenAllocation) private tokenAllocations;
-    
+
     /// @notice Mapping of token to supported protocols
     mapping(address => address[]) public tokenProtocols;
-    
+
     /// @notice CCIP messenger for cross-chain operations
     ICCIPMessenger public immutable ccipMessenger;
-    
+
     /// @notice Administrator role
     address public admin;
-    
+
     /// @notice Emergency stop flag
     bool public emergencyStop;
-    
+
     /// @notice Minimum rebalance improvement threshold (in basis points)
     uint256 public rebalanceThreshold = 100; // 1%
-    
+
     /// @notice Maximum gas price for rebalancing
     uint256 public maxGasPrice = 50 gwei;
 
@@ -97,13 +101,19 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
 
     /// @notice Modifier to restrict access to rebalancer role
     modifier onlyRebalancer() {
-        require(msg.sender == admin || hasRole(REBALANCER_ROLE, msg.sender), "Not rebalancer");
+        require(
+            msg.sender == admin || hasRole(REBALANCER_ROLE, msg.sender),
+            "Not rebalancer"
+        );
         _;
     }
 
     /// @notice Modifier to restrict access to harvester role
     modifier onlyHarvester() {
-        require(msg.sender == admin || hasRole(HARVESTER_ROLE, msg.sender), "Not harvester");
+        require(
+            msg.sender == admin || hasRole(HARVESTER_ROLE, msg.sender),
+            "Not harvester"
+        );
         _;
     }
 
@@ -113,10 +123,10 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
     constructor(address _ccipMessenger, address _admin) {
         _ccipMessenger.validateAddress();
         _admin.validateAddress();
-        
+
         ccipMessenger = ICCIPMessenger(_ccipMessenger);
         admin = _admin;
-        
+
         // Grant admin role to deployer
         roles[EMERGENCY_ROLE][_admin] = true;
         roles[REBALANCER_ROLE][_admin] = true;
@@ -131,12 +141,15 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
     function addProtocol(address adapter, uint256 weight) external onlyAdmin {
         adapter.validateAddress();
         weight.validatePercentage();
-        require(activeProtocols.length < MAX_PROTOCOLS, "Max protocols reached");
+        require(
+            activeProtocols.length < MAX_PROTOCOLS,
+            "Max protocols reached"
+        );
         require(!protocols[adapter].isActive, "Protocol already active");
 
         IProtocolAdapter protocolAdapter = IProtocolAdapter(adapter);
         string memory protocolName = protocolAdapter.protocolName();
-        
+
         protocols[adapter] = ProtocolInfo({
             adapter: protocolAdapter,
             weight: weight,
@@ -144,9 +157,9 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
             currentAPY: 0,
             isActive: true
         });
-        
+
         activeProtocols.push(adapter);
-        
+
         emit ProtocolAdded(adapter, protocolName);
     }
 
@@ -156,19 +169,21 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      */
     function removeProtocol(address adapter) external onlyAdmin {
         require(protocols[adapter].isActive, "Protocol not active");
-        
+
         // Remove from active protocols array
         for (uint256 i = 0; i < activeProtocols.length; i++) {
             if (activeProtocols[i] == adapter) {
-                activeProtocols[i] = activeProtocols[activeProtocols.length - 1];
+                activeProtocols[i] = activeProtocols[
+                    activeProtocols.length - 1
+                ];
                 activeProtocols.pop();
                 break;
             }
         }
-        
+
         string memory protocolName = protocols[adapter].adapter.protocolName();
         protocols[adapter].isActive = false;
-        
+
         emit ProtocolRemoved(adapter, protocolName);
     }
 
@@ -177,19 +192,22 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param token The token address
      * @return allocations Array of current allocations per protocol
      */
-    function getCurrentAllocation(address token) 
-        external view returns (AllocationTarget[] memory allocations) {
+    function getCurrentAllocation(
+        address token
+    ) external view returns (AllocationTarget[] memory allocations) {
         address[] memory supportedProtocols = tokenProtocols[token];
         allocations = new AllocationTarget[](supportedProtocols.length);
-        
+
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
             address protocolAddr = supportedProtocols[i];
             ProtocolInfo memory protocol = protocols[protocolAddr];
-            
+
             allocations[i] = AllocationTarget({
                 protocolAdapter: protocolAddr,
                 targetPercentage: protocol.weight,
-                currentAllocation: tokenAllocations[token].protocolAllocations[protocolAddr],
+                currentAllocation: tokenAllocations[token].protocolAllocations[
+                    protocolAddr
+                ],
                 currentAPY: protocol.currentAPY
             });
         }
@@ -200,21 +218,25 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param token The token address
      * @return weightedAPY The current weighted average APY
      */
-    function getWeightedAPY(address token) external view returns (uint256 weightedAPY) {
+    function getWeightedAPY(
+        address token
+    ) external view returns (uint256 weightedAPY) {
         address[] memory supportedProtocols = tokenProtocols[token];
         uint256[] memory apys = new uint256[](supportedProtocols.length);
         uint256[] memory weights = new uint256[](supportedProtocols.length);
-        
+
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
             address protocolAddr = supportedProtocols[i];
             ProtocolInfo memory protocol = protocols[protocolAddr];
-            
+
             apys[i] = protocol.currentAPY;
-            weights[i] = tokenAllocations[token].protocolAllocations[protocolAddr];
+            weights[i] = tokenAllocations[token].protocolAllocations[
+                protocolAddr
+            ];
         }
-        
+
         if (supportedProtocols.length == 0) return 0;
-        
+
         return MathLib.calculateWeightedAverage(apys, weights);
     }
 
@@ -224,39 +246,43 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param totalAmount The total amount to allocate
      * @return targets Optimal allocation targets
      */
-    function calculateOptimalAllocation(address token, uint256 totalAmount)
-        external view returns (AllocationTarget[] memory targets) {
+    function calculateOptimalAllocation(
+        address token,
+        uint256 totalAmount
+    ) external view returns (AllocationTarget[] memory targets) {
         address[] memory supportedProtocols = _getSupportedProtocols(token);
-        
+
         if (supportedProtocols.length == 0) {
             return new AllocationTarget[](0);
         }
-        
+
         uint256[] memory apys = new uint256[](supportedProtocols.length);
         uint256[] memory risks = new uint256[](supportedProtocols.length);
-        uint256[] memory correlations = new uint256[](supportedProtocols.length);
-        
+        uint256[] memory correlations = new uint256[](
+            supportedProtocols.length
+        );
+
         // Collect current data for optimization
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
             address protocolAddr = supportedProtocols[i];
             ProtocolInfo memory protocol = protocols[protocolAddr];
-            
+
             apys[i] = protocol.currentAPY;
             risks[i] = _calculateProtocolRisk(protocolAddr, token);
             correlations[i] = 5000; // Default 50% correlation
         }
-        
-        uint256[] memory optimalAllocations = MathLib.calculateOptimalAllocation(
-            apys, risks, correlations
-        );
-        
+
+        uint256[] memory optimalAllocations = MathLib
+            .calculateOptimalAllocation(apys, risks, correlations);
+
         targets = new AllocationTarget[](supportedProtocols.length);
-        
+
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
             targets[i] = AllocationTarget({
                 protocolAdapter: supportedProtocols[i],
                 targetPercentage: optimalAllocations[i],
-                currentAllocation: totalAmount * optimalAllocations[i] / ValidationLib.BPS_MAX,
+                currentAllocation: (totalAmount * optimalAllocations[i]) /
+                    ValidationLib.BPS_MAX,
                 currentAPY: apys[i]
             });
         }
@@ -266,23 +292,26 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @notice Execute a rebalance operation based on AI recommendations
      * @param params The rebalance parameters including targets and constraints
      */
-    function executeRebalance(RebalanceParams calldata params) 
-        external onlyRebalancer nonReentrant whenNotStopped {
+    function executeRebalance(
+        RebalanceParams calldata params
+    ) external onlyRebalancer nonReentrant whenNotStopped {
         params.token.validateAddress();
         params.deadline.validateDeadline();
         ValidationLib.validateNonEmptyArray(params.targets.length);
-        
+
         // Update APYs before rebalancing
         _updateAPYs(params.token);
-        
+
         // Validate rebalance is beneficial
-        (bool shouldRebalance, uint256 expectedImprovement) = 
-            shouldRebalance(params.token, rebalanceThreshold);
-        require(shouldRebalance, "Rebalance not beneficial");
-        
+        (bool shouldRebal, uint256 expectedImprovement) = this.shouldRebalance(
+            params.token,
+            rebalanceThreshold
+        );
+        require(shouldRebal, "Rebalance not beneficial");
+
         // Execute the rebalance
         _executeRebalanceInternal(params);
-        
+
         emit AIRebalanceTriggered(params.token, expectedImprovement);
     }
 
@@ -293,31 +322,43 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param minShares Minimum shares expected from the operation
      * @return shares Total shares received across all protocols
      */
-    function deposit(address token, uint256 amount, uint256 minShares) 
-        external nonReentrant whenNotStopped returns (uint256 shares) {
+    function deposit(
+        address token,
+        uint256 amount,
+        uint256 minShares
+    ) external nonReentrant whenNotStopped returns (uint256 shares) {
         token.validateAddress();
         amount.validateAmount();
-        
+
         ERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        
+
         // Get optimal allocation
-        AllocationTarget[] memory targets = this.calculateOptimalAllocation(token, amount);
-        
+        AllocationTarget[] memory targets = this.calculateOptimalAllocation(
+            token,
+            amount
+        );
+
         // Deposit to protocols according to optimal allocation
         for (uint256 i = 0; i < targets.length; i++) {
             if (targets[i].currentAllocation > 0) {
-                ERC20(token).safeApprove(targets[i].protocolAdapter, targets[i].currentAllocation);
-                
-                uint256 protocolShares = IProtocolAdapter(targets[i].protocolAdapter)
-                    .deposit(token, targets[i].currentAllocation, 0);
-                    
+                ERC20(token).safeApprove(
+                    targets[i].protocolAdapter,
+                    targets[i].currentAllocation
+                );
+
+                uint256 protocolShares = IProtocolAdapter(
+                    targets[i].protocolAdapter
+                ).deposit(token, targets[i].currentAllocation, 0);
+
                 shares += protocolShares;
-                tokenAllocations[token].protocolAllocations[targets[i].protocolAdapter] += targets[i].currentAllocation;
+                tokenAllocations[token].protocolAllocations[
+                    targets[i].protocolAdapter
+                ] += targets[i].currentAllocation;
             }
         }
-        
+
         tokenAllocations[token].totalAllocated += amount;
-        
+
         // Validate minimum shares received
         ValidationLib.validateSlippage(minShares, shares, MAX_SLIPPAGE);
     }
@@ -329,37 +370,50 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param minAmount Minimum amount expected from the operation
      * @return amount Total amount received from withdrawals
      */
-    function withdraw(address token, uint256 shares, uint256 minAmount) 
-        external nonReentrant whenNotStopped returns (uint256 amount) {
+    function withdraw(
+        address token,
+        uint256 shares,
+        uint256 minAmount
+    ) external nonReentrant whenNotStopped returns (uint256 amount) {
         token.validateAddress();
         shares.validateAmount();
-        
+
         // Withdraw from protocols in reverse optimal order to minimize impact
         address[] memory supportedProtocols = _getSupportedProtocols(token);
-        
+
         uint256 remainingShares = shares;
-        
-        for (uint256 i = 0; i < supportedProtocols.length && remainingShares > 0; i++) {
+
+        for (
+            uint256 i = 0;
+            i < supportedProtocols.length && remainingShares > 0;
+            i++
+        ) {
             address protocolAddr = supportedProtocols[i];
-            uint256 protocolShares = IProtocolAdapter(protocolAddr).getSharesBalance(token);
-            
+            uint256 protocolShares = IProtocolAdapter(protocolAddr)
+                .getSharesBalance(token);
+
             if (protocolShares > 0) {
-                uint256 sharesToWithdraw = MathLib.min(remainingShares, protocolShares);
+                uint256 sharesToWithdraw = MathLib.min(
+                    remainingShares,
+                    protocolShares
+                );
                 uint256 protocolAmount = IProtocolAdapter(protocolAddr)
                     .withdraw(token, sharesToWithdraw, 0);
-                    
+
                 amount += protocolAmount;
                 remainingShares -= sharesToWithdraw;
-                
-                tokenAllocations[token].protocolAllocations[protocolAddr] -= protocolAmount;
+
+                tokenAllocations[token].protocolAllocations[
+                    protocolAddr
+                ] -= protocolAmount;
             }
         }
-        
+
         tokenAllocations[token].totalAllocated -= amount;
-        
+
         // Validate minimum amount received
         ValidationLib.validateSlippage(minAmount, amount, MAX_SLIPPAGE);
-        
+
         ERC20(token).safeTransfer(msg.sender, amount);
     }
 
@@ -368,11 +422,15 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param token The token to harvest yield for
      * @return totalYield Total yield harvested across all protocols
      */
-    function harvestAll(address token) external onlyHarvester returns (uint256 totalYield) {
+    function harvestAll(
+        address token
+    ) external onlyHarvester returns (uint256 totalYield) {
         address[] memory supportedProtocols = _getSupportedProtocols(token);
-        
+
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
-            try IProtocolAdapter(supportedProtocols[i]).harvestYield(token) returns (uint256 yield) {
+            try
+                IProtocolAdapter(supportedProtocols[i]).harvestYield(token)
+            returns (uint256 yield) {
                 totalYield += yield;
             } catch {
                 // Continue with other protocols if one fails
@@ -385,31 +443,35 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @notice Check if rebalancing would be profitable for a token
      * @param token The token address
      * @param minImprovementBps Minimum APY improvement required (in basis points)
-     * @return shouldRebalance Whether rebalancing is recommended
+     * @return shouldRebal Whether rebalancing is recommended
      * @return expectedImprovement Expected APY improvement in basis points
      */
-    function shouldRebalance(address token, uint256 minImprovementBps) 
-        external view returns (bool shouldRebalance, uint256 expectedImprovement) {
+    function shouldRebalance(
+        address token,
+        uint256 minImprovementBps
+    ) external view returns (bool shouldRebal, uint256 expectedImprovement) {
         uint256 currentAPY = this.getWeightedAPY(token);
-        
+
         // Calculate potential APY with optimal allocation
-        AllocationTarget[] memory optimalTargets = this.calculateOptimalAllocation(
-            token, tokenAllocations[token].totalAllocated
-        );
-        
+        AllocationTarget[] memory optimalTargets = this
+            .calculateOptimalAllocation(
+                token,
+                tokenAllocations[token].totalAllocated
+            );
+
         uint256[] memory apys = new uint256[](optimalTargets.length);
         uint256[] memory weights = new uint256[](optimalTargets.length);
-        
+
         for (uint256 i = 0; i < optimalTargets.length; i++) {
             apys[i] = optimalTargets[i].currentAPY;
             weights[i] = optimalTargets[i].targetPercentage;
         }
-        
+
         uint256 optimalAPY = MathLib.calculateWeightedAverage(apys, weights);
-        
+
         if (optimalAPY > currentAPY) {
             expectedImprovement = optimalAPY - currentAPY;
-            shouldRebalance = expectedImprovement >= minImprovementBps;
+            shouldRebal = expectedImprovement >= minImprovementBps;
         }
     }
 
@@ -418,7 +480,9 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param token The token address
      * @return totalTVL Combined TVL across all protocols
      */
-    function getTotalTVL(address token) external view returns (uint256 totalTVL) {
+    function getTotalTVL(
+        address token
+    ) external view returns (uint256 totalTVL) {
         return tokenAllocations[token].totalAllocated;
     }
 
@@ -427,7 +491,9 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param token The token address
      * @return adapters Array of protocol adapter addresses that support the token
      */
-    function getSupportedProtocols(address token) external view returns (address[] memory adapters) {
+    function getSupportedProtocols(
+        address token
+    ) external view returns (address[] memory adapters) {
         return _getSupportedProtocols(token);
     }
 
@@ -439,12 +505,21 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @return upkeepNeeded Whether upkeep is needed
      * @return performData Data to pass to performUpkeep
      */
-    function checkUpkeep(bytes calldata checkData) 
-        external view override returns (bool upkeepNeeded, bytes memory performData) {
+    function checkUpkeep(
+        bytes calldata checkData
+    )
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
         address token = abi.decode(checkData, (address));
-        
-        (bool shouldRebal, uint256 improvement) = this.shouldRebalance(token, rebalanceThreshold);
-        
+
+        (bool shouldRebal, uint256 improvement) = this.shouldRebalance(
+            token,
+            rebalanceThreshold
+        );
+
         if (shouldRebal && tx.gasprice <= maxGasPrice) {
             upkeepNeeded = true;
             performData = abi.encode(token, improvement);
@@ -456,42 +531,48 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
      * @param performData Encoded data from checkUpkeep
      */
     function performUpkeep(bytes calldata performData) external override {
-        (address token, uint256 expectedImprovement) = abi.decode(performData, (address, uint256));
-        
+        (address token, uint256 expectedImprovement) = abi.decode(
+            performData,
+            (address, uint256)
+        );
+
         // Verify upkeep is still needed
-        (bool shouldRebal,) = this.shouldRebalance(token, rebalanceThreshold);
+        (bool shouldRebal, ) = this.shouldRebalance(token, rebalanceThreshold);
         require(shouldRebal, "Upkeep no longer needed");
-        
+
         // Create rebalance params with optimal allocation
         AllocationTarget[] memory targets = this.calculateOptimalAllocation(
-            token, tokenAllocations[token].totalAllocated
+            token,
+            tokenAllocations[token].totalAllocated
         );
-        
+
         RebalanceParams memory params = RebalanceParams({
             token: token,
             targets: targets,
             maxSlippage: MAX_SLIPPAGE,
             deadline: block.timestamp + 1 hours
         });
-        
+
         this.executeRebalance(params);
     }
 
     // ===== INTERNAL FUNCTIONS =====
 
-    function _getSupportedProtocols(address token) internal view returns (address[] memory supported) {
+    function _getSupportedProtocols(
+        address token
+    ) internal view returns (address[] memory supported) {
         uint256 count = 0;
-        
+
         // Count supported protocols
         for (uint256 i = 0; i < activeProtocols.length; i++) {
             if (protocols[activeProtocols[i]].adapter.supportsToken(token)) {
                 count++;
             }
         }
-        
+
         supported = new address[](count);
         uint256 index = 0;
-        
+
         // Populate array
         for (uint256 i = 0; i < activeProtocols.length; i++) {
             if (protocols[activeProtocols[i]].adapter.supportsToken(token)) {
@@ -503,11 +584,13 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
 
     function _updateAPYs(address token) internal {
         address[] memory supportedProtocols = _getSupportedProtocols(token);
-        
+
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
             address protocolAddr = supportedProtocols[i];
-            
-            try IProtocolAdapter(protocolAddr).getAPY(token) returns (uint256 apy) {
+
+            try IProtocolAdapter(protocolAddr).getAPY(token) returns (
+                uint256 apy
+            ) {
                 protocols[protocolAddr].currentAPY = apy;
                 protocols[protocolAddr].lastAPYUpdate = block.timestamp;
             } catch {
@@ -517,44 +600,60 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
         }
     }
 
-    function _calculateProtocolRisk(address protocolAddr, address token) internal view returns (uint256 risk) {
+    function _calculateProtocolRisk(
+        address protocolAddr,
+        address token
+    ) internal view returns (uint256 risk) {
         // Simple risk calculation based on TVL and time
         uint256 tvl = protocols[protocolAddr].adapter.getTVL(token);
-        uint256 timeSinceUpdate = block.timestamp - protocols[protocolAddr].lastAPYUpdate;
-        
+        uint256 timeSinceUpdate = block.timestamp -
+            protocols[protocolAddr].lastAPYUpdate;
+
         // Higher TVL = lower risk, older data = higher risk
         risk = 1000; // Base risk
-        
-        if (tvl > 1000000 * 1e18) { // > 1M tokens
+
+        if (tvl > 1000000 * 1e18) {
+            // > 1M tokens
             risk = 500; // Lower risk for high TVL
         }
-        
+
         if (timeSinceUpdate > 1 hours) {
             risk += 500; // Higher risk for stale data
         }
-        
+
         return MathLib.min(risk, 5000); // Cap at 50%
     }
 
-    function _executeRebalanceInternal(RebalanceParams calldata params) internal {
+    function _executeRebalanceInternal(
+        RebalanceParams calldata params
+    ) internal {
         // This would implement the actual rebalancing logic
         // For brevity, we'll emit the event showing the rebalance occurred
         address[] memory fromProtocols = new address[](0);
         address[] memory toProtocols = new address[](params.targets.length);
         uint256[] memory amounts = new uint256[](params.targets.length);
-        
+
         for (uint256 i = 0; i < params.targets.length; i++) {
             toProtocols[i] = params.targets[i].protocolAdapter;
             amounts[i] = params.targets[i].currentAllocation;
         }
-        
+
         uint256 newAPY = this.getWeightedAPY(params.token);
         tokenAllocations[params.token].lastRebalanceTime = block.timestamp;
-        
-        emit Rebalanced(params.token, fromProtocols, toProtocols, amounts, newAPY);
+
+        emit Rebalanced(
+            params.token,
+            fromProtocols,
+            toProtocols,
+            amounts,
+            newAPY
+        );
     }
 
-    function hasRole(bytes32 role, address account) internal view returns (bool) {
+    function hasRole(
+        bytes32 role,
+        address account
+    ) internal view returns (bool) {
         return roles[role][account];
     }
 
@@ -581,4 +680,4 @@ contract YieldOptimizer is IYieldOptimizer, AutomationCompatibleInterface, Reent
         require(hasRole(EMERGENCY_ROLE, msg.sender), "Not emergency role");
         emergencyStop = !emergencyStop;
     }
-} 
+}

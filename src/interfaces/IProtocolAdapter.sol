@@ -9,10 +9,10 @@ pragma solidity ^0.8.19;
 interface IProtocolAdapter {
     /// @notice Emitted when funds are deposited into the protocol
     event Deposited(address indexed token, uint256 amount, uint256 shares);
-    
+
     /// @notice Emitted when funds are withdrawn from the protocol
     event Withdrawn(address indexed token, uint256 amount, uint256 shares);
-    
+
     /// @notice Emitted when yield is harvested from the protocol
     event YieldHarvested(address indexed token, uint256 amount);
 
@@ -43,8 +43,11 @@ interface IProtocolAdapter {
      * @param minShares Minimum shares expected to prevent slippage
      * @return shares The number of shares received
      */
-    function deposit(address token, uint256 amount, uint256 minShares) 
-        external returns (uint256 shares);
+    function deposit(
+        address token,
+        uint256 amount,
+        uint256 minShares
+    ) external payable returns (uint256 shares);
 
     /**
      * @notice Withdraw tokens from the protocol
@@ -53,8 +56,11 @@ interface IProtocolAdapter {
      * @param minAmount Minimum amount expected to prevent slippage
      * @return amount The amount of tokens received
      */
-    function withdraw(address token, uint256 shares, uint256 minAmount) 
-        external returns (uint256 amount);
+    function withdraw(
+        address token,
+        uint256 shares,
+        uint256 minAmount
+    ) external returns (uint256 amount);
 
     /**
      * @notice Harvest yield from the protocol
@@ -68,14 +74,18 @@ interface IProtocolAdapter {
      * @param token The token address to check
      * @return supported True if the token is supported
      */
-    function supportsToken(address token) external view returns (bool supported);
+    function supportsToken(
+        address token
+    ) external view returns (bool supported);
 
     /**
      * @notice Get the shares balance for a given token
      * @param token The token address
      * @return shares The current shares balance
      */
-    function getSharesBalance(address token) external view returns (uint256 shares);
+    function getSharesBalance(
+        address token
+    ) external view returns (uint256 shares);
 
     /**
      * @notice Convert shares to underlying token amount
@@ -83,7 +93,10 @@ interface IProtocolAdapter {
      * @param shares The number of shares
      * @return amount The equivalent token amount
      */
-    function sharesToTokens(address token, uint256 shares) external view returns (uint256 amount);
+    function sharesToTokens(
+        address token,
+        uint256 shares
+    ) external view returns (uint256 amount);
 
     /**
      * @notice Convert token amount to shares
@@ -91,5 +104,8 @@ interface IProtocolAdapter {
      * @param amount The token amount
      * @return shares The equivalent number of shares
      */
-    function tokensToShares(address token, uint256 amount) external view returns (uint256 shares);
-} 
+    function tokensToShares(
+        address token,
+        uint256 amount
+    ) external view returns (uint256 shares);
+}
