@@ -670,16 +670,15 @@ contract CrossChainLending is ICrossChainLending, ReentrancyGuard {
 
     /**
      * @notice Calculate dynamic interest rate based on risk factors
-     * @param collateralToken The collateral token address
-     * @param borrowToken The borrow token address
+     * @dev Token parameters are currently unused but kept for future enhancements
      * @param ltvRatio Loan-to-value ratio (in basis points)
      * @param creditScore Borrower credit score (0-1000)
      * @param duration Loan duration in seconds
      * @return interestRate Calculated interest rate in basis points per year
      */
     function calculateDynamicRate(
-        address collateralToken,
-        address borrowToken,
+        address /* collateralToken */,
+        address /* borrowToken */,
         uint256 ltvRatio,
         uint256 creditScore,
         uint256 duration

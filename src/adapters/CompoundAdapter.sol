@@ -205,7 +205,10 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         uint256 amount,
         uint256 minShares
     ) external payable nonReentrant whenNotStopped returns (uint256 shares) {
-        token.validateAddress();
+        // Validate token address only if it's not ETH (address(0))
+        if (token != address(0)) {
+            token.validateAddress();
+        }
         amount.validateAmount();
         require(supportedTokens[token], "Token not supported");
 
@@ -279,7 +282,10 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         uint256 shares,
         uint256 minAmount
     ) external nonReentrant whenNotStopped returns (uint256 amount) {
-        token.validateAddress();
+        // Validate token address only if it's not ETH (address(0))
+        if (token != address(0)) {
+            token.validateAddress();
+        }
         shares.validateAmount();
         require(supportedTokens[token], "Token not supported");
 

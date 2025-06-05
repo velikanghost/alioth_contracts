@@ -9,10 +9,10 @@ pragma solidity ^0.8.19;
 library MathLib {
     /// @notice Thrown when attempting to divide by zero
     error DivisionByZero();
-    
+
     /// @notice Thrown when calculation would result in overflow
     error CalculationOverflow();
-    
+
     /// @notice Thrown when square root calculation fails
     error InvalidSquareRoot();
 
@@ -34,19 +34,19 @@ library MathLib {
         uint256 time
     ) internal pure returns (uint256 interest) {
         if (principal == 0 || rate == 0 || time == 0) return 0;
-        
+
         // Convert rate to per-second basis
-        uint256 ratePerSecond = rate * WAD / (BPS_MAX * SECONDS_PER_YEAR);
-        
+        uint256 ratePerSecond = (rate * WAD) / (BPS_MAX * SECONDS_PER_YEAR);
+
         // Calculate (1 + r)^t using approximation for small rates
-        uint256 compoundFactor = WAD + (ratePerSecond * time / WAD);
-        
+        uint256 compoundFactor = WAD + ((ratePerSecond * time) / WAD);
+
         // For longer periods, use more accurate calculation
         if (time > 30 days) {
             compoundFactor = _compound(WAD + ratePerSecond, time);
         }
-        
-        return principal * (compoundFactor - WAD) / WAD;
+
+        return (principal * (compoundFactor - WAD)) / WAD;
     }
 
     /**
@@ -62,17 +62,17 @@ library MathLib {
         if (values.length != weights.length || values.length == 0) {
             revert CalculationOverflow();
         }
-        
+
         uint256 totalValue = 0;
         uint256 totalWeight = 0;
-        
+
         for (uint256 i = 0; i < values.length; i++) {
             totalValue += values[i] * weights[i];
             totalWeight += weights[i];
         }
-        
+
         if (totalWeight == 0) revert DivisionByZero();
-        
+
         return totalValue / totalWeight;
     }
 
@@ -89,9 +89,9 @@ library MathLib {
         uint256 liquidationThreshold
     ) internal pure returns (uint256 healthFactor) {
         if (debtValue == 0) return type(uint256).max;
-        
-        uint256 maxDebt = collateralValue * liquidationThreshold / BPS_MAX;
-        return maxDebt * BPS_MAX / debtValue;
+
+        uint256 maxDebt = (collateralValue * liquidationThreshold) / BPS_MAX;
+        return (maxDebt * BPS_MAX) / debtValue;
     }
 
     /**
@@ -105,7 +105,7 @@ library MathLib {
         uint256 collateralValue
     ) internal pure returns (uint256 ltv) {
         if (collateralValue == 0) revert DivisionByZero();
-        return loanAmount * BPS_MAX / collateralValue;
+        return (loanAmount * BPS_MAX) / collateralValue;
     }
 
     /**
@@ -122,54 +122,64 @@ library MathLib {
     ) internal pure returns (uint256 apy) {
         if (oldValue == 0 || timeElapsed == 0) return 0;
         if (newValue <= oldValue) return 0;
-        
-        uint256 growth = newValue * WAD / oldValue;
-        uint256 annualizedGrowth = _compound(growth, SECONDS_PER_YEAR / timeElapsed);
-        
-        return (annualizedGrowth - WAD) * BPS_MAX / WAD;
+
+        uint256 growth = (newValue * WAD) / oldValue;
+        uint256 annualizedGrowth = _compound(
+            growth,
+            SECONDS_PER_YEAR / timeElapsed
+        );
+
+        return ((annualizedGrowth - WAD) * BPS_MAX) / WAD;
     }
 
     /**
      * @notice Calculate optimal allocation using simplified Markowitz model
      * @param expectedReturns Array of expected returns (in basis points)
      * @param risks Array of risk scores (0-10000)
-     * @param correlations Array of correlation coefficients (0-10000)
      * @return allocations Optimal allocation percentages (in basis points)
      */
     function calculateOptimalAllocation(
         uint256[] memory expectedReturns,
-        uint256[] memory risks,
-        uint256[] memory correlations
+        uint256[] memory risks
     ) internal pure returns (uint256[] memory allocations) {
         uint256 n = expectedReturns.length;
         if (n == 0 || n != risks.length) revert CalculationOverflow();
-        
+
         allocations = new uint256[](n);
-        
+
         // Simple risk-adjusted allocation
         uint256 totalScore = 0;
         uint256[] memory scores = new uint256[](n);
-        
+
         for (uint256 i = 0; i < n; i++) {
             // Score = return / risk (with minimum risk of 1)
             uint256 risk = risks[i] > 0 ? risks[i] : 1;
-            scores[i] = expectedReturns[i] * BPS_MAX / risk;
+            scores[i] = (expectedReturns[i] * BPS_MAX) / risk;
             totalScore += scores[i];
         }
-        
+
         // Normalize allocations to sum to 100%
         if (totalScore == 0) {
             // Equal allocation if no clear winner
             uint256 equalAllocation = BPS_MAX / n;
+            uint256 remainder = BPS_MAX % n;
             for (uint256 i = 0; i < n; i++) {
                 allocations[i] = equalAllocation;
+                // Add remainder to first protocol to ensure total = BPS_MAX
+                if (i == 0) {
+                    allocations[i] += remainder;
+                }
             }
         } else {
-            for (uint256 i = 0; i < n; i++) {
-                allocations[i] = scores[i] * BPS_MAX / totalScore;
+            uint256 totalAllocated = 0;
+            for (uint256 i = 0; i < n - 1; i++) {
+                allocations[i] = (scores[i] * BPS_MAX) / totalScore;
+                totalAllocated += allocations[i];
             }
+            // Assign remainder to last protocol to ensure total = BPS_MAX
+            allocations[n - 1] = BPS_MAX - totalAllocated;
         }
-        
+
         return allocations;
     }
 
@@ -187,16 +197,20 @@ library MathLib {
     ) internal pure returns (uint256 bonus) {
         // Higher bonus for lower health factors
         uint256 bonusMultiplier = BPS_MAX;
-        
-        if (healthFactor < 5000) { // < 50%
+
+        if (healthFactor < 5000) {
+            // < 50%
             bonusMultiplier = 15000; // 150%
-        } else if (healthFactor < 7500) { // < 75%
+        } else if (healthFactor < 7500) {
+            // < 75%
             bonusMultiplier = 12500; // 125%
-        } else if (healthFactor < 9000) { // < 90%
+        } else if (healthFactor < 9000) {
+            // < 90%
             bonusMultiplier = 11000; // 110%
         }
-        
-        return debtValue * baseBonusBps * bonusMultiplier / (BPS_MAX * BPS_MAX);
+
+        return
+            (debtValue * baseBonusBps * bonusMultiplier) / (BPS_MAX * BPS_MAX);
     }
 
     /**
@@ -212,11 +226,11 @@ library MathLib {
         uint256 impactFactor
     ) internal pure returns (uint256 impact) {
         if (liquidityPool == 0) return BPS_MAX; // Maximum impact
-        
-        uint256 ratio = tradeSize * BPS_MAX / liquidityPool;
-        
+
+        uint256 ratio = (tradeSize * BPS_MAX) / liquidityPool;
+
         // Quadratic price impact: impact = ratio^2 * factor
-        return ratio * ratio * impactFactor / (BPS_MAX * BPS_MAX);
+        return (ratio * ratio * impactFactor) / (BPS_MAX * BPS_MAX);
     }
 
     /**
@@ -225,22 +239,25 @@ library MathLib {
      * @param exponent Exponent value
      * @return result Compound result (in WAD)
      */
-    function _compound(uint256 base, uint256 exponent) private pure returns (uint256 result) {
+    function _compound(
+        uint256 base,
+        uint256 exponent
+    ) private pure returns (uint256 result) {
         if (exponent == 0) return WAD;
         if (base == WAD) return WAD;
-        
+
         result = WAD;
         uint256 baseN = base;
-        
+
         // Binary exponentiation
         while (exponent > 0) {
             if (exponent % 2 == 1) {
-                result = result * baseN / WAD;
+                result = (result * baseN) / WAD;
             }
-            baseN = baseN * baseN / WAD;
+            baseN = (baseN * baseN) / WAD;
             exponent /= 2;
         }
-        
+
         return result;
     }
 
@@ -251,10 +268,10 @@ library MathLib {
      */
     function sqrt(uint256 x) internal pure returns (uint256 result) {
         if (x == 0) return 0;
-        
+
         uint256 z = (x + 1) / 2;
         result = x;
-        
+
         while (z < result) {
             result = z;
             z = (x / z + z) / 2;
@@ -280,4 +297,4 @@ library MathLib {
     function max(uint256 a, uint256 b) internal pure returns (uint256 result) {
         return a > b ? a : b;
     }
-} 
+}

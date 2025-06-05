@@ -339,7 +339,7 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
         uint256 currentShares = vault.balanceOf(address(this));
         if (currentShares > 0) {
             try vault.convertToAssets(currentShares) returns (
-                uint256 currentValue
+                uint256 /* currentValue */
             ) {
                 // This is a simplified yield calculation
                 // In practice, we'd track the original deposit amount

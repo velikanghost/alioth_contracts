@@ -207,9 +207,6 @@ contract AaveAdapter is IProtocolAdapter, ReentrancyGuard {
         uint256 aTokenBalance = IAToken(aToken).balanceOf(address(this));
         require(aTokenBalance >= shares, "Insufficient aToken balance");
 
-        // Get initial token balance
-        uint256 initialBalance = ERC20(token).balanceOf(address(this));
-
         // Withdraw from Aave (shares = amount in this case for aTokens)
         try aavePool.withdraw(token, shares, address(this)) returns (
             uint256 withdrawn

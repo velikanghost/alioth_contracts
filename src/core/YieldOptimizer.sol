@@ -195,7 +195,7 @@ contract YieldOptimizer is
     function getCurrentAllocation(
         address token
     ) external view returns (AllocationTarget[] memory allocations) {
-        address[] memory supportedProtocols = tokenProtocols[token];
+        address[] memory supportedProtocols = _getSupportedProtocols(token);
         allocations = new AllocationTarget[](supportedProtocols.length);
 
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
@@ -221,7 +221,7 @@ contract YieldOptimizer is
     function getWeightedAPY(
         address token
     ) external view returns (uint256 weightedAPY) {
-        address[] memory supportedProtocols = tokenProtocols[token];
+        address[] memory supportedProtocols = _getSupportedProtocols(token);
         uint256[] memory apys = new uint256[](supportedProtocols.length);
         uint256[] memory weights = new uint256[](supportedProtocols.length);
 
@@ -258,9 +258,7 @@ contract YieldOptimizer is
 
         uint256[] memory apys = new uint256[](supportedProtocols.length);
         uint256[] memory risks = new uint256[](supportedProtocols.length);
-        uint256[] memory correlations = new uint256[](
-            supportedProtocols.length
-        );
+        uint256[] memory weights = new uint256[](supportedProtocols.length);
 
         // Collect current data for optimization
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
@@ -269,11 +267,31 @@ contract YieldOptimizer is
 
             apys[i] = protocol.currentAPY;
             risks[i] = _calculateProtocolRisk(protocolAddr, token);
-            correlations[i] = 5000; // Default 50% correlation
+            weights[i] = protocol.weight;
         }
 
-        uint256[] memory optimalAllocations = MathLib
-            .calculateOptimalAllocation(apys, risks, correlations);
+        uint256[] memory optimalAllocations;
+
+        // Check if all APYs are zero or equal - if so, use protocol weights
+        bool useWeights = true;
+        uint256 firstAPY = apys[0];
+        for (uint256 i = 0; i < apys.length; i++) {
+            if (apys[i] != firstAPY) {
+                useWeights = false;
+                break;
+            }
+        }
+
+        if (useWeights) {
+            // Use protocol weights for allocation
+            optimalAllocations = weights;
+        } else {
+            // Use APY-based optimization
+            optimalAllocations = MathLib.calculateOptimalAllocation(
+                apys,
+                risks
+            );
+        }
 
         targets = new AllocationTarget[](supportedProtocols.length);
 
@@ -531,10 +549,7 @@ contract YieldOptimizer is
      * @param performData Encoded data from checkUpkeep
      */
     function performUpkeep(bytes calldata performData) external override {
-        (address token, uint256 expectedImprovement) = abi.decode(
-            performData,
-            (address, uint256)
-        );
+        (address token, ) = abi.decode(performData, (address, uint256));
 
         // Verify upkeep is still needed
         (bool shouldRebal, ) = this.shouldRebalance(token, rebalanceThreshold);
