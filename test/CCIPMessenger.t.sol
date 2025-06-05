@@ -185,7 +185,7 @@ contract CCIPMessengerTest is Test {
         mockLinkToken.mint(bob, 1000 ether);
     }
 
-    function testBasicFunctionality() public {
+    function testBasicFunctionality() public view {
         // Test that the contract is properly initialized
         assertTrue(ccipMessenger.isSupportedChain(POLYGON_CHAIN_SELECTOR));
         assertTrue(ccipMessenger.isAllowlistedSender(alice));
@@ -235,7 +235,7 @@ contract CCIPMessengerTest is Test {
         assertEq(config.maxRetries, 5);
     }
 
-    function testGetFee() public {
+    function testGetFee() public view {
         bytes memory data = abi.encode("test message");
 
         uint256 fee = ccipMessenger.getFee(
@@ -393,7 +393,7 @@ contract CCIPMessengerTest is Test {
         assertEq(feeCollector.balance, initialBalance + 0.5 ether);
     }
 
-    function testSupportsInterface() public {
+    function testSupportsInterface() public view {
         // Test that the contract supports the required interfaces
         assertTrue(
             ccipMessenger.supportsInterface(

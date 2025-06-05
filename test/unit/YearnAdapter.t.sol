@@ -231,11 +231,11 @@ contract YearnAdapterTest is Test {
         vm.stopPrank();
     }
 
-    function testProtocolName() public {
+    function testProtocolName() public view {
         assertEq(adapter.protocolName(), "Yearn");
     }
 
-    function testGetAPY() public {
+    function testGetAPY() public view {
         uint256 apy = adapter.getAPY(tokenAddress);
 
         // Should calculate APY based on price per share growth
@@ -248,7 +248,7 @@ contract YearnAdapterTest is Test {
         adapter.getAPY(address(0x999));
     }
 
-    function testSupportsToken() public {
+    function testSupportsToken() public view {
         assertTrue(adapter.supportsToken(tokenAddress));
         assertFalse(adapter.supportsToken(address(0x999)));
     }
@@ -374,7 +374,7 @@ contract YearnAdapterTest is Test {
         assertEq(yieldAmount, 0);
     }
 
-    function testSharesTokenConversion() public {
+    function testSharesTokenConversion() public view {
         uint256 shares = 100e18;
         uint256 amount = adapter.sharesToTokens(tokenAddress, shares);
 
@@ -570,7 +570,7 @@ contract YearnAdapterTest is Test {
 
     // ===== VAULT-SPECIFIC TESTS =====
 
-    function testConvertToSharesEdgeCases() public {
+    function testConvertToSharesEdgeCases() public view {
         // Test conversion with zero shares
         uint256 shares = adapter.tokensToShares(tokenAddress, 0);
         assertEq(shares, 0);

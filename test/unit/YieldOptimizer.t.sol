@@ -413,7 +413,7 @@ contract YieldOptimizerTest is Test {
 
     // ===== ACCESS CONTROL TESTS =====
 
-    function testAdminRole() public {
+    function testAdminRole() public view {
         assertEq(yieldOptimizer.admin(), admin);
     }
 
@@ -577,7 +577,7 @@ contract YieldOptimizerTest is Test {
         assertEq(totalAllocated, totalAmount);
     }
 
-    function testCalculateOptimalAllocationNoProtocols() public {
+    function testCalculateOptimalAllocationNoProtocols() public view {
         IYieldOptimizer.AllocationTarget[] memory targets = yieldOptimizer
             .calculateOptimalAllocation(address(token), 1000e18);
 
@@ -714,18 +714,18 @@ contract YieldOptimizerTest is Test {
 
     // ===== CHAINLINK AUTOMATION TESTS =====
 
-    function testGetCurrentAllocationNoProtocols() public {
+    function testGetCurrentAllocationNoProtocols() public view {
         IYieldOptimizer.AllocationTarget[] memory allocations = yieldOptimizer
             .getCurrentAllocation(address(token));
         assertEq(allocations.length, 0);
     }
 
-    function testGetTotalTVLNoProtocols() public {
+    function testGetTotalTVLNoProtocols() public view {
         uint256 totalTVL = yieldOptimizer.getTotalTVL(address(token));
         assertEq(totalTVL, 0);
     }
 
-    function testGetSupportedProtocolsNoProtocols() public {
+    function testGetSupportedProtocolsNoProtocols() public view {
         address[] memory protocols = yieldOptimizer.getSupportedProtocols(
             address(token)
         );

@@ -228,11 +228,11 @@ contract CompoundAdapterTest is Test {
         vm.stopPrank();
     }
 
-    function testProtocolName() public {
+    function testProtocolName() public view {
         assertEq(adapter.protocolName(), "Compound");
     }
 
-    function testGetAPY() public {
+    function testGetAPY() public view {
         uint256 apy = adapter.getAPY(tokenAddress);
 
         // Should calculate APY from supply rate per block
@@ -257,7 +257,7 @@ contract CompoundAdapterTest is Test {
         adapter.getAPY(address(0x999));
     }
 
-    function testSupportsToken() public {
+    function testSupportsToken() public view {
         assertTrue(adapter.supportsToken(tokenAddress));
         assertTrue(adapter.supportsToken(address(0))); // ETH
         assertFalse(adapter.supportsToken(address(0x999)));
@@ -389,7 +389,7 @@ contract CompoundAdapterTest is Test {
         assertEq(yieldAmount, 0);
     }
 
-    function testSharesTokenConversion() public {
+    function testSharesTokenConversion() public view {
         uint256 shares = 100e18;
         uint256 amount = adapter.sharesToTokens(tokenAddress, shares);
 

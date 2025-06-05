@@ -163,7 +163,7 @@ contract AaveAdapter is IProtocolAdapter, ReentrancyGuard {
         // Get initial aToken balance
         uint256 initialBalance = IAToken(aToken).balanceOf(address(this));
 
-        // Transfer tokens from caller
+        // Transfer tokens from caller (YieldOptimizer) - caller has already approved us
         ERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve Aave pool
