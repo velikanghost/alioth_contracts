@@ -12,10 +12,7 @@ package-lock.json
 .DS_Store
 src/.DS_Store
 llms.txt
-dev_process.md
-summary.txt
-YIELDOPTIMIZER_GUIDE.md
-YieldOptimizer_SlippageError_Troubleshooting.md
+ALIOTH_SETUP_GUIDE.md
+MULTI_ASSET_VAULT_README.md
 YieldOptimizer_Functions_Guide.md
-how_to_test.md
-CCIP_IMPLEMENTATION.md
+CCIP.md
