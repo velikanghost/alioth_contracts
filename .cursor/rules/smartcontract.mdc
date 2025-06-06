@@ -22,6 +22,7 @@ You are developing smart contracts for Alioth, an AI-driven cross-chain DeFi pla
 - Use ReentrancyGuard for all external functions that handle funds
 - Apply SafeERC20 for all token interactions
 - Use custom errors instead of string-based reverts
+- Do not use Unicode characters in solidity files
 
 ### Security Patterns
 - Implement checks-effects-interactions pattern

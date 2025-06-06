@@ -37,7 +37,10 @@ interface IYieldOptimizer {
     event ProtocolRemoved(address indexed adapter, string protocolName);
 
     /// @notice Emitted when AI agent triggers a rebalance
-    event AIRebalanceTriggered(address indexed token, uint256 expectedAPYImprovement);
+    event AIRebalanceTriggered(
+        address indexed token,
+        uint256 expectedAPYImprovement
+    );
 
     /**
      * @notice Add a new protocol adapter to the optimizer
@@ -57,15 +60,18 @@ interface IYieldOptimizer {
      * @param token The token address
      * @return allocations Array of current allocations per protocol
      */
-    function getCurrentAllocation(address token) 
-        external view returns (AllocationTarget[] memory allocations);
+    function getCurrentAllocation(
+        address token
+    ) external view returns (AllocationTarget[] memory allocations);
 
     /**
      * @notice Get the weighted average APY for a token across all protocols
      * @param token The token address
      * @return weightedAPY The current weighted average APY
      */
-    function getWeightedAPY(address token) external view returns (uint256 weightedAPY);
+    function getWeightedAPY(
+        address token
+    ) external view returns (uint256 weightedAPY);
 
     /**
      * @notice Calculate optimal allocation based on current APYs and constraints
@@ -73,8 +79,10 @@ interface IYieldOptimizer {
      * @param totalAmount The total amount to allocate
      * @return targets Optimal allocation targets
      */
-    function calculateOptimalAllocation(address token, uint256 totalAmount)
-        external view returns (AllocationTarget[] memory targets);
+    function calculateOptimalAllocation(
+        address token,
+        uint256 totalAmount
+    ) external view returns (AllocationTarget[] memory targets);
 
     /**
      * @notice Execute a rebalance operation based on AI recommendations
@@ -89,8 +97,11 @@ interface IYieldOptimizer {
      * @param minShares Minimum shares expected from the operation
      * @return shares Total shares received across all protocols
      */
-    function deposit(address token, uint256 amount, uint256 minShares) 
-        external returns (uint256 shares);
+    function deposit(
+        address token,
+        uint256 amount,
+        uint256 minShares
+    ) external returns (uint256 shares);
 
     /**
      * @notice Withdraw tokens from optimal protocols to minimize impact
@@ -99,8 +110,11 @@ interface IYieldOptimizer {
      * @param minAmount Minimum amount expected from the operation
      * @return amount Total amount received from withdrawals
      */
-    function withdraw(address token, uint256 shares, uint256 minAmount) 
-        external returns (uint256 amount);
+    function withdraw(
+        address token,
+        uint256 shares,
+        uint256 minAmount
+    ) external returns (uint256 amount);
 
     /**
      * @notice Harvest yield from all protocols for a given token
@@ -116,20 +130,26 @@ interface IYieldOptimizer {
      * @return shouldRebalance Whether rebalancing is recommended
      * @return expectedImprovement Expected APY improvement in basis points
      */
-    function shouldRebalance(address token, uint256 minImprovementBps) 
-        external view returns (bool shouldRebalance, uint256 expectedImprovement);
+    function shouldRebalance(
+        address token,
+        uint256 minImprovementBps
+    ) external view returns (bool shouldRebalance, uint256 expectedImprovement);
 
     /**
      * @notice Get total value locked across all protocols for a token
      * @param token The token address
      * @return totalTVL Combined TVL across all protocols
      */
-    function getTotalTVL(address token) external view returns (uint256 totalTVL);
+    function getTotalTVL(
+        address token
+    ) external view returns (uint256 totalTVL);
 
     /**
      * @notice Get supported protocols for a given token
      * @param token The token address
      * @return adapters Array of protocol adapter addresses that support the token
      */
-    function getSupportedProtocols(address token) external view returns (address[] memory adapters);
-} 
+    function getSupportedProtocols(
+        address token
+    ) external view returns (address[] memory adapters);
+}
