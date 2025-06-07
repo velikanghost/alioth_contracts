@@ -45,9 +45,9 @@ interface IYieldOptimizer {
     /**
      * @notice Add a new protocol adapter to the optimizer
      * @param adapter The protocol adapter contract address
-     * @param weight The weight for this protocol in optimization (0-10000 basis points)
+     * @dev Weight is now calculated dynamically based on APY
      */
-    function addProtocol(address adapter, uint256 weight) external;
+    function addProtocol(address adapter) external;
 
     /**
      * @notice Remove a protocol adapter from the optimizer

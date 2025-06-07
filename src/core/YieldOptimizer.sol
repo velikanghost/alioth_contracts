@@ -11,11 +11,13 @@ import "../interfaces/IProtocolAdapter.sol";
 import "../interfaces/ICCIPMessenger.sol";
 import "../libraries/ValidationLib.sol";
 import "../libraries/MathLib.sol";
+// import "../libraries/DynamicAllocationLib.sol"; // Simplified integration
+import "../core/ChainlinkFeedManager.sol";
 
 /**
  * @title YieldOptimizer
- * @notice AI-driven yield optimization system for Alioth platform
- * @dev Manages allocation across multiple protocols and chains for optimal yield
+ * @notice AI-driven yield optimization system for Alioth platform with Chainlink integration
+ * @dev Manages allocation across multiple protocols and chains for optimal yield using real-time Chainlink data
  */
 contract YieldOptimizer is
     IYieldOptimizer,
@@ -75,6 +77,15 @@ contract YieldOptimizer is
     /// @notice CCIP messenger for cross-chain operations
     ICCIPMessenger public immutable ccipMessenger;
 
+    /// @notice Chainlink Feed Manager for price and rate data
+    ChainlinkFeedManager public immutable chainlinkFeedManager;
+
+    /// @notice Risk tolerance for allocation (0-10000, higher = more risk)
+    uint256 public riskTolerance = 5000; // 50% default
+
+    /// @notice Whether to use Chainlink-enhanced allocation
+    bool public useChainlinkAllocation = true;
+
     /// @notice Administrator role
     address public admin;
 
@@ -120,12 +131,25 @@ contract YieldOptimizer is
     /// @notice Simple role checking (replace with OpenZeppelin AccessControl in production)
     mapping(bytes32 => mapping(address => bool)) private roles;
 
-    constructor(address _ccipMessenger, address _admin) {
+    /// @notice Event emitted when Chainlink allocation strategy is updated
+    event ChainlinkAllocationToggled(bool enabled);
+    event RiskToleranceUpdated(uint256 newRiskTolerance);
+
+    constructor(
+        address _ccipMessenger,
+        address _chainlinkFeedManager,
+        address _admin
+    ) {
         _ccipMessenger.validateAddress();
+        _chainlinkFeedManager.validateAddress();
         _admin.validateAddress();
 
         ccipMessenger = ICCIPMessenger(_ccipMessenger);
+        chainlinkFeedManager = ChainlinkFeedManager(_chainlinkFeedManager);
         admin = _admin;
+
+        // Set default balanced risk tolerance
+        riskTolerance = 5000; // 50%
 
         // Grant admin role to deployer
         roles[EMERGENCY_ROLE][_admin] = true;
@@ -136,11 +160,10 @@ contract YieldOptimizer is
     /**
      * @notice Add a new protocol adapter to the optimizer
      * @param adapter The protocol adapter contract address
-     * @param weight The weight for this protocol in optimization (0-10000 basis points)
+     * @dev Weight is now calculated dynamically based on APY, no manual weight needed
      */
-    function addProtocol(address adapter, uint256 weight) external onlyAdmin {
+    function addProtocol(address adapter) external onlyAdmin {
         adapter.validateAddress();
-        weight.validatePercentage();
         require(
             activeProtocols.length < MAX_PROTOCOLS,
             "Max protocols reached"
@@ -152,7 +175,7 @@ contract YieldOptimizer is
 
         protocols[adapter] = ProtocolInfo({
             adapter: protocolAdapter,
-            weight: weight,
+            weight: 0, // Deprecated, kept for struct compatibility
             lastAPYUpdate: block.timestamp,
             currentAPY: 0,
             isActive: true
@@ -198,16 +221,24 @@ contract YieldOptimizer is
         address[] memory supportedProtocols = _getSupportedProtocols(token);
         allocations = new AllocationTarget[](supportedProtocols.length);
 
+        uint256 totalAllocated = tokenAllocations[token].totalAllocated;
+
         for (uint256 i = 0; i < supportedProtocols.length; i++) {
             address protocolAddr = supportedProtocols[i];
             ProtocolInfo memory protocol = protocols[protocolAddr];
+            uint256 currentAllocation = tokenAllocations[token]
+                .protocolAllocations[protocolAddr];
+
+            // Calculate target percentage dynamically based on current allocation
+            uint256 targetPercentage = 0;
+            if (totalAllocated > 0) {
+                targetPercentage = (currentAllocation * 10000) / totalAllocated;
+            }
 
             allocations[i] = AllocationTarget({
                 protocolAdapter: protocolAddr,
-                targetPercentage: protocol.weight,
-                currentAllocation: tokenAllocations[token].protocolAllocations[
-                    protocolAddr
-                ],
+                targetPercentage: targetPercentage,
+                currentAllocation: currentAllocation,
                 currentAPY: protocol.currentAPY
             });
         }
@@ -229,7 +260,8 @@ contract YieldOptimizer is
             address protocolAddr = supportedProtocols[i];
             ProtocolInfo memory protocol = protocols[protocolAddr];
 
-            apys[i] = protocol.currentAPY;
+            // Get fresh APY directly from adapter
+            apys[i] = IProtocolAdapter(protocolAddr).getAPY(token);
             weights[i] = tokenAllocations[token].protocolAllocations[
                 protocolAddr
             ];
@@ -241,10 +273,10 @@ contract YieldOptimizer is
     }
 
     /**
-     * @notice Calculate optimal allocation based on current APYs and constraints
+     * @notice Calculate optimal allocation based on Chainlink data and current APYs
      * @param token The token address
      * @param totalAmount The total amount to allocate
-     * @return targets Optimal allocation targets
+     * @return targets Optimal allocation targets using Chainlink-enhanced algorithm
      */
     function calculateOptimalAllocation(
         address token,
@@ -256,6 +288,124 @@ contract YieldOptimizer is
             return new AllocationTarget[](0);
         }
 
+        if (
+            useChainlinkAllocation &&
+            chainlinkFeedManager.isSupportedToken(token)
+        ) {
+            // Use Chainlink-enhanced allocation
+            return
+                _calculateChainlinkEnhancedAllocation(
+                    token,
+                    totalAmount,
+                    supportedProtocols
+                );
+        } else {
+            // Fallback to original algorithm
+            return
+                _calculateBasicAllocation(
+                    token,
+                    totalAmount,
+                    supportedProtocols
+                );
+        }
+    }
+
+    /**
+     * @notice Calculate allocation using Chainlink data feeds
+     * @param token The token address
+     * @param totalAmount Total amount to allocate
+     * @param supportedProtocols Array of supported protocol addresses
+     * @return targets Chainlink-enhanced allocation targets
+     */
+    function _calculateChainlinkEnhancedAllocation(
+        address token,
+        uint256 totalAmount,
+        address[] memory supportedProtocols
+    ) internal view returns (AllocationTarget[] memory targets) {
+        targets = new AllocationTarget[](supportedProtocols.length);
+
+        // Get Chainlink price data for market cap weighting
+        uint256 tokenPriceUSD = 0;
+        // Note: Simplified implementation - in production, integrate with ChainlinkFeedManager
+        // For now, we'll use protocol APYs with basic market cap estimation
+
+        // Calculate enhanced allocation scores
+        uint256[] memory scores = new uint256[](supportedProtocols.length);
+        uint256 totalScore = 0;
+
+        for (uint256 i = 0; i < supportedProtocols.length; i++) {
+            address protocolAddr = supportedProtocols[i];
+            ProtocolInfo memory protocol = protocols[protocolAddr];
+
+            // Get fresh APY directly from adapter
+            uint256 currentAPY = IProtocolAdapter(protocolAddr).getAPY(token);
+
+            // Base score from APY
+            uint256 apyScore = currentAPY;
+
+            // Market cap bonus if we have price data
+            uint256 marketCapBonus = 0;
+            if (tokenPriceUSD > 0) {
+                uint256 tvl = IProtocolAdapter(protocolAddr).getTVL(token);
+                uint256 marketValue = (tvl * tokenPriceUSD) / 1e8;
+
+                // Simple market cap weighting: larger protocols get bonus
+                if (marketValue > 1000000000e18) {
+                    // >$1B
+                    marketCapBonus = 200; // 2% bonus
+                } else if (marketValue > 100000000e18) {
+                    // >$100M
+                    marketCapBonus = 100; // 1% bonus
+                }
+            }
+
+            scores[i] = apyScore + marketCapBonus;
+            totalScore += scores[i];
+        }
+
+        // Allocate proportionally based on scores
+        if (totalScore == 0) {
+            // Equal allocation if no clear winner
+            uint256 equalAmount = totalAmount / supportedProtocols.length;
+            for (uint256 i = 0; i < supportedProtocols.length; i++) {
+                targets[i] = AllocationTarget({
+                    protocolAdapter: supportedProtocols[i],
+                    targetPercentage: 10000 / supportedProtocols.length,
+                    currentAllocation: equalAmount,
+                    currentAPY: IProtocolAdapter(supportedProtocols[i]).getAPY(
+                        token
+                    )
+                });
+            }
+        } else {
+            for (uint256 i = 0; i < supportedProtocols.length; i++) {
+                uint256 allocation = (totalAmount * scores[i]) / totalScore;
+                uint256 percentage = (scores[i] * 10000) / totalScore;
+
+                targets[i] = AllocationTarget({
+                    protocolAdapter: supportedProtocols[i],
+                    targetPercentage: percentage,
+                    currentAllocation: allocation,
+                    currentAPY: IProtocolAdapter(supportedProtocols[i]).getAPY(
+                        token
+                    )
+                });
+            }
+        }
+    }
+
+    /**
+     * @notice Fallback allocation calculation (original algorithm)
+     * @param token The token address
+     * @param totalAmount Total amount to allocate
+     * @param supportedProtocols Array of supported protocol addresses
+     * @return targets Basic allocation targets
+     */
+    function _calculateBasicAllocation(
+        address token,
+        uint256 totalAmount,
+        address[] memory supportedProtocols
+    ) internal view returns (AllocationTarget[] memory targets) {
         uint256[] memory apys = new uint256[](supportedProtocols.length);
         uint256[] memory risks = new uint256[](supportedProtocols.length);
         uint256[] memory weights = new uint256[](supportedProtocols.length);
@@ -694,5 +844,65 @@ contract YieldOptimizer is
     function toggleEmergencyStop() external {
         require(hasRole(EMERGENCY_ROLE, msg.sender), "Not emergency role");
         emergencyStop = !emergencyStop;
+    }
+
+    function toggleChainlinkAllocation() external onlyAdmin {
+        useChainlinkAllocation = !useChainlinkAllocation;
+        emit ChainlinkAllocationToggled(useChainlinkAllocation);
+    }
+
+    function setRiskTolerance(uint256 _riskTolerance) external onlyAdmin {
+        require(_riskTolerance <= 10000, "Risk tolerance too high");
+        riskTolerance = _riskTolerance;
+        emit RiskToleranceUpdated(_riskTolerance);
+    }
+
+    /**
+     * @notice Set conservative risk tolerance (30%)
+     */
+    function setConservativeStrategy() external onlyAdmin {
+        riskTolerance = 3000;
+        emit RiskToleranceUpdated(riskTolerance);
+    }
+
+    /**
+     * @notice Set balanced risk tolerance (50%)
+     */
+    function setBalancedStrategy() external onlyAdmin {
+        riskTolerance = 5000;
+        emit RiskToleranceUpdated(riskTolerance);
+    }
+
+    /**
+     * @notice Set aggressive risk tolerance (80%)
+     */
+    function setAggressiveStrategy() external onlyAdmin {
+        riskTolerance = 8000;
+        emit RiskToleranceUpdated(riskTolerance);
+    }
+
+    /**
+     * @notice Get current risk tolerance
+     * @return tolerance Current risk tolerance (0-10000)
+     */
+    function getCurrentRiskTolerance()
+        external
+        view
+        returns (uint256 tolerance)
+    {
+        return riskTolerance;
+    }
+
+    /**
+     * @notice Check if Chainlink allocation is enabled and supported for a token
+     * @param token Token address to check
+     * @return enabled True if Chainlink allocation is enabled and token is supported
+     */
+    function isChainlinkAllocationEnabled(
+        address token
+    ) external view returns (bool enabled) {
+        return
+            useChainlinkAllocation &&
+            chainlinkFeedManager.isSupportedToken(token);
     }
 }

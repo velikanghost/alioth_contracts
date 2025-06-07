@@ -31,6 +31,8 @@ interface IAToken {
     function balanceOf(address user) external view returns (uint256);
 
     function scaledBalanceOf(address user) external view returns (uint256);
+
+    function totalSupply() external view returns (uint256);
 }
 
 struct ReserveData {
@@ -305,6 +307,111 @@ contract AaveAdapter is IProtocolAdapter, ReentrancyGuard {
         // For Aave, tokens have approximately 1:1 relationship with aTokens
         // In a more sophisticated implementation, we'd use the liquidity index
         shares = amount;
+    }
+
+    /**
+     * @notice Check if protocol is currently operational
+     * @param token The token address
+     * @return isOperational True if protocol is fully operational
+     * @return statusMessage Human readable status message
+     */
+    function getOperationalStatus(
+        address token
+    ) external view returns (bool isOperational, string memory statusMessage) {
+        if (!supportedTokens[token]) {
+            return (false, "Token not supported");
+        }
+
+        address aToken = aTokens[token];
+        if (aToken == address(0)) {
+            return (false, "aToken not configured");
+        }
+
+        // Check if Aave pool is paused or has issues
+        try IAToken(aToken).balanceOf(address(this)) {
+            isOperational = true;
+            statusMessage = "Operational";
+        } catch {
+            isOperational = false;
+            statusMessage = "Protocol access failed";
+        }
+    }
+
+    /**
+     * @notice Get protocol health metrics for risk assessment
+     * @param token The token address
+     * @return healthScore Overall protocol health score (0-10000)
+     * @return liquidityDepth Available liquidity depth
+     * @return utilizationRate Current utilization rate (0-10000)
+     */
+    function getHealthMetrics(
+        address token
+    )
+        external
+        view
+        returns (
+            uint256 healthScore,
+            uint256 liquidityDepth,
+            uint256 utilizationRate
+        )
+    {
+        require(supportedTokens[token], "Token not supported");
+
+        // Aave is generally considered a high-health protocol
+        healthScore = 9000; // 90% health score
+
+        // Get liquidity from reserves
+        try aavePool.getReserveData(token) returns (
+            ReserveData memory reserveData
+        ) {
+            address aToken = reserveData.aTokenAddress;
+            liquidityDepth = ERC20(token).balanceOf(aToken);
+
+            // Calculate utilization rate
+            uint256 totalSupply = IAToken(aToken).totalSupply();
+            if (totalSupply > 0) {
+                utilizationRate =
+                    ((totalSupply - liquidityDepth) * 10000) /
+                    totalSupply;
+            } else {
+                utilizationRate = 0;
+            }
+        } catch {
+            liquidityDepth = 0;
+            utilizationRate = 0;
+        }
+    }
+
+    /**
+     * @notice Get protocol risk score for a token
+     * @param token The token address
+     * @return riskScore Risk score from 0 (lowest risk) to 10000 (highest risk)
+     */
+    function getRiskScore(
+        address token
+    ) external view returns (uint256 riskScore) {
+        require(supportedTokens[token], "Token not supported");
+
+        // Aave is considered low risk due to:
+        // - Battle-tested protocol
+        // - Strong governance
+        // - Comprehensive audits
+        // - Large TVL and liquidity
+        riskScore = 1500; // 15% risk score (low risk)
+    }
+
+    /**
+     * @notice Get maximum recommended allocation percentage for this protocol
+     * @param token The token address
+     * @return maxAllocation Maximum allocation in basis points (e.g., 5000 = 50%)
+     */
+    function getMaxRecommendedAllocation(
+        address token
+    ) external view returns (uint256 maxAllocation) {
+        require(supportedTokens[token], "Token not supported");
+
+        // Aave can handle larger allocations due to high liquidity and stability
+        maxAllocation = 7000; // 70% maximum allocation
     }
 
     // ===== ADMIN FUNCTIONS =====

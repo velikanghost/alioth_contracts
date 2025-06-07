@@ -54,6 +54,8 @@ interface IYearnVault {
     function withdrawalQueue(uint256 index) external view returns (address);
 
     function lastReport() external view returns (uint256);
+
+    function emergencyShutdown() external view returns (bool);
 }
 
 interface IYearnRegistry {
@@ -442,6 +444,132 @@ contract YearnAdapter is IProtocolAdapter, ReentrancyGuard {
                 }
             }
         }
+    }
+
+    /**
+     * @notice Check if protocol is currently operational
+     * @param token The token address
+     * @return isOperational True if protocol is fully operational
+     * @return statusMessage Human readable status message
+     */
+    function getOperationalStatus(
+        address token
+    ) external view returns (bool isOperational, string memory statusMessage) {
+        if (!supportedTokens[token]) {
+            return (false, "Token not supported");
+        }
+
+        address vaultAddr = vaults[token];
+        if (vaultAddr == address(0)) {
+            return (false, "Vault not configured");
+        }
+
+        IYearnVault vault = IYearnVault(vaultAddr);
+
+        // Check if vault is working and not emergency shutdown
+        try vault.emergencyShutdown() returns (bool shutdown) {
+            if (shutdown) {
+                return (false, "Vault in emergency shutdown");
+            }
+        } catch {
+            return (false, "Vault access failed");
+        }
+
+        // Check if vault has capacity
+        try vault.availableDepositLimit() returns (uint256 limit) {
+            if (limit == 0) {
+                return (false, "Vault at capacity");
+            }
+        } catch {
+            return (false, "Vault limit check failed");
+        }
+
+        isOperational = true;
+        statusMessage = "Operational";
+    }
+
+    /**
+     * @notice Get protocol health metrics for risk assessment
+     * @param token The token address
+     * @return healthScore Overall protocol health score (0-10000)
+     * @return liquidityDepth Available liquidity depth
+     * @return utilizationRate Current utilization rate (0-10000)
+     */
+    function getHealthMetrics(
+        address token
+    )
+        external
+        view
+        returns (
+            uint256 healthScore,
+            uint256 liquidityDepth,
+            uint256 utilizationRate
+        )
+    {
+        require(supportedTokens[token], "Token not supported");
+
+        // Yearn is considered high health protocol due to battle-tested strategies
+        healthScore = 8800; // 88% health score
+
+        address vaultAddr = vaults[token];
+        if (vaultAddr != address(0)) {
+            IYearnVault vault = IYearnVault(vaultAddr);
+
+            // Get available liquidity (vault balance + strategy liquid assets)
+            try vault.totalAssets() returns (uint256 totalAssets) {
+                liquidityDepth = totalAssets;
+
+                // For Yearn, utilization is typically high as assets are deployed in strategies
+                // Most assets are utilized, so we'll estimate based on vault mechanics
+                try vault.totalSupply() returns (uint256 supply) {
+                    if (supply > 0) {
+                        // Yearn vaults typically have high utilization (95%+)
+                        utilizationRate = 9500; // 95% utilization estimate
+                    } else {
+                        utilizationRate = 0;
+                    }
+                } catch {
+                    utilizationRate = 9000; // Default high utilization
+                }
+            } catch {
+                liquidityDepth = 0;
+                utilizationRate = 0;
+            }
+        } else {
+            liquidityDepth = 0;
+            utilizationRate = 0;
+        }
+    }
+
+    /**
+     * @notice Get protocol risk score for a token
+     * @param token The token address
+     * @return riskScore Risk score from 0 (lowest risk) to 10000 (highest risk)
+     */
+    function getRiskScore(
+        address token
+    ) external view returns (uint256 riskScore) {
+        require(supportedTokens[token], "Token not supported");
+
+        // Yearn has medium risk due to:
+        // - Strategy complexity and smart contract risk
+        // - Dependency on underlying protocols
+        // - But excellent track record and security practices
+        riskScore = 3000; // 30% risk score (medium risk)
+    }
+
+    /**
+     * @notice Get maximum recommended allocation percentage for this protocol
+     * @param token The token address
+     * @return maxAllocation Maximum allocation in basis points (e.g., 5000 = 50%)
+     */
+    function getMaxRecommendedAllocation(
+        address token
+    ) external view returns (uint256 maxAllocation) {
+        require(supportedTokens[token], "Token not supported");
+
+        // Yearn can handle moderate-large allocations but strategies have capacity limits
+        maxAllocation = 5500; // 55% maximum allocation
     }
 
     // ===== ADMIN FUNCTIONS =====

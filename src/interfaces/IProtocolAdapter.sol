@@ -4,7 +4,7 @@ pragma solidity ^0.8.19;
 /**
  * @title IProtocolAdapter
  * @notice Interface for protocol adapters that integrate with various DeFi protocols
- * @dev Provides a uniform interface for interacting with different yield-generating protocols
+ * @dev Each adapter handles interaction with a specific protocol (Aave, Compound, etc.)
  */
 interface IProtocolAdapter {
     /// @notice Emitted when funds are deposited into the protocol
@@ -18,21 +18,21 @@ interface IProtocolAdapter {
 
     /**
      * @notice Get the name of the protocol this adapter interfaces with
-     * @return The protocol name (e.g., "Aave", "Compound", "Yearn")
+     * @return name The protocol name (e.g., "Aave V3", "Compound V2")
      */
-    function protocolName() external view returns (string memory);
+    function protocolName() external pure returns (string memory name);
 
     /**
-     * @notice Get the current APY for a given token
-     * @param token The token address to check APY for
-     * @return apy The current annual percentage yield (in basis points, e.g., 500 = 5%)
+     * @notice Get the current Annual Percentage Yield for a token
+     * @param token The token address
+     * @return apy The current APY in basis points (e.g., 500 = 5%)
      */
     function getAPY(address token) external view returns (uint256 apy);
 
     /**
-     * @notice Get the current TVL for a given token in this protocol
-     * @param token The token address to check TVL for
-     * @return tvl The total value locked for this token
+     * @notice Get the total value locked for a token in this protocol
+     * @param token The token address
+     * @return tvl The total value locked
      */
     function getTVL(address token) external view returns (uint256 tvl);
 
@@ -40,8 +40,8 @@ interface IProtocolAdapter {
      * @notice Deposit tokens into the protocol
      * @param token The token to deposit
      * @param amount The amount to deposit
-     * @param minShares Minimum shares expected to prevent slippage
-     * @return shares The number of shares received
+     * @param minShares Minimum shares to receive (slippage protection)
+     * @return shares The number of shares/tokens received from the protocol
      */
     function deposit(
         address token,
@@ -52,9 +52,9 @@ interface IProtocolAdapter {
     /**
      * @notice Withdraw tokens from the protocol
      * @param token The token to withdraw
-     * @param shares The number of shares to burn
-     * @param minAmount Minimum amount expected to prevent slippage
-     * @return amount The amount of tokens received
+     * @param shares The number of shares to burn/redeem
+     * @param minAmount Minimum amount to receive (slippage protection)
+     * @return amount The amount of underlying tokens received
      */
     function withdraw(
         address token,
@@ -63,14 +63,14 @@ interface IProtocolAdapter {
     ) external returns (uint256 amount);
 
     /**
-     * @notice Harvest yield from the protocol
+     * @notice Harvest yield/rewards from the protocol
      * @param token The token to harvest yield for
-     * @return yieldAmount The amount of yield harvested
+     * @return yield The amount of yield harvested
      */
-    function harvestYield(address token) external returns (uint256 yieldAmount);
+    function harvestYield(address token) external returns (uint256 yield);
 
     /**
-     * @notice Check if the protocol supports a given token
+     * @notice Check if this adapter supports a given token
      * @param token The token address to check
      * @return supported True if the token is supported
      */
@@ -79,19 +79,19 @@ interface IProtocolAdapter {
     ) external view returns (bool supported);
 
     /**
-     * @notice Get the shares balance for a given token
+     * @notice Get the current balance of shares for a token
      * @param token The token address
-     * @return shares The current shares balance
+     * @return balance The current share balance
      */
     function getSharesBalance(
         address token
-    ) external view returns (uint256 shares);
+    ) external view returns (uint256 balance);
 
     /**
      * @notice Convert shares to underlying token amount
      * @param token The token address
      * @param shares The number of shares
-     * @return amount The equivalent token amount
+     * @return amount The equivalent amount of underlying tokens
      */
     function sharesToTokens(
         address token,
@@ -101,11 +101,57 @@ interface IProtocolAdapter {
     /**
      * @notice Convert token amount to shares
      * @param token The token address
-     * @param amount The token amount
+     * @param amount The amount of tokens
      * @return shares The equivalent number of shares
      */
     function tokensToShares(
         address token,
         uint256 amount
     ) external view returns (uint256 shares);
+
+    /**
+     * @notice Check if protocol is currently operational
+     * @param token The token address
+     * @return isOperational True if protocol is fully operational
+     * @return statusMessage Human readable status message
+     */
+    function getOperationalStatus(
+        address token
+    ) external view returns (bool isOperational, string memory statusMessage);
+
+    /**
+     * @notice Get protocol health metrics for risk assessment
+     * @param token The token address
+     * @return healthScore Overall protocol health score (0-10000)
+     * @return liquidityDepth Available liquidity depth
+     * @return utilizationRate Current utilization rate (0-10000)
+     */
+    function getHealthMetrics(
+        address token
+    )
+        external
+        view
+        returns (
+            uint256 healthScore,
+            uint256 liquidityDepth,
+            uint256 utilizationRate
+        );
+
+    /**
+     * @notice Get protocol risk score for a token
+     * @param token The token address
+     * @return riskScore Risk score from 0 (lowest risk) to 10000 (highest risk)
+     */
+    function getRiskScore(
+        address token
+    ) external view returns (uint256 riskScore);
+
+    /**
+     * @notice Get maximum recommended allocation percentage for this protocol
+     * @param token The token address
+     * @return maxAllocation Maximum allocation in basis points (e.g., 5000 = 50%)
+     */
+    function getMaxRecommendedAllocation(
+        address token
+    ) external view returns (uint256 maxAllocation);
 }

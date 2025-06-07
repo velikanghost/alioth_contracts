@@ -58,14 +58,18 @@ contract MockCCIPMessenger {
 
 // Simplified mock adapters for integration testing
 contract MockProtocolAdapter is IProtocolAdapter {
-    string public protocolName;
+    string private _protocolName;
     uint256 public mockAPY;
     mapping(address => bool) public supportedTokens;
     mapping(address => uint256) public shares;
 
     constructor(string memory _name, uint256 _apy) {
-        protocolName = _name;
+        _protocolName = _name;
         mockAPY = _apy;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Mock";
     }
 
     function getAPY(address) external view returns (uint256) {
@@ -125,6 +129,36 @@ contract MockProtocolAdapter is IProtocolAdapter {
         uint256 amount
     ) external pure returns (uint256) {
         return amount;
+    }
+
+    function getOperationalStatus(
+        address
+    ) external pure returns (bool isOperational, string memory statusMessage) {
+        return (true, "Mock operational");
+    }
+
+    function getHealthMetrics(
+        address
+    )
+        external
+        pure
+        returns (
+            uint256 healthScore,
+            uint256 liquidityDepth,
+            uint256 utilizationRate
+        )
+    {
+        return (9000, 1000000e18, 5000);
+    }
+
+    function getRiskScore(address) external pure returns (uint256 riskScore) {
+        return 2000; // 20% risk
+    }
+
+    function getMaxRecommendedAllocation(
+        address
+    ) external pure returns (uint256 maxAllocation) {
+        return 5000; // 50% max allocation
     }
 
     function addSupportedToken(address token) external {

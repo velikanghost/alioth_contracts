@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "../src/core/YieldOptimizer.sol";
 import "../src/core/CrossChainLending.sol";
 import "../src/core/CCIPMessenger.sol";
+import "../src/core/ChainlinkFeedManager.sol";
 import "../src/adapters/AaveAdapter.sol";
 import "../src/adapters/CompoundAdapter.sol";
 import "../src/adapters/YearnAdapter.sol";
@@ -156,6 +157,7 @@ contract DeployAlioth is Script {
 
     struct DeployedContracts {
         CCIPMessenger ccipMessenger;
+        ChainlinkFeedManager chainlinkFeedManager;
         YieldOptimizer yieldOptimizer;
         CrossChainLending lending;
         AaveAdapter aaveAdapter;
@@ -277,9 +279,17 @@ contract DeployAlioth is Script {
             address(contracts.ccipMessenger)
         );
 
+        // Deploy ChainlinkFeedManager
+        contracts.chainlinkFeedManager = new ChainlinkFeedManager(config.admin);
+        console.log(
+            "ChainlinkFeedManager deployed at:",
+            address(contracts.chainlinkFeedManager)
+        );
+
         // Deploy Yield Optimizer with configured admin
         contracts.yieldOptimizer = new YieldOptimizer(
             address(contracts.ccipMessenger),
+            address(contracts.chainlinkFeedManager),
             config.admin // Use config.admin instead of tx.origin for consistency
         );
         console.log(
@@ -391,7 +401,7 @@ contract DeployAlioth is Script {
         AaveAdapter aaveAdapter
     ) internal {
         // Add Aave adapter to yield optimizer
-        yieldOptimizer.addProtocol(address(aaveAdapter), 10000); // 100% weight initially
+        yieldOptimizer.addProtocol(address(aaveAdapter)); // Weight calculated dynamically
 
         console.log("Yield Optimizer configured with Aave adapter");
     }
@@ -687,6 +697,7 @@ contract DeployTestnet is Script {
         );
         YieldOptimizer yieldOptimizer = new YieldOptimizer(
             address(ccipMessenger),
+            address(0), // ChainlinkFeedManager - deploy separately if needed
             admin
         );
         CrossChainLending lending = new CrossChainLending(
@@ -700,7 +711,7 @@ contract DeployTestnet is Script {
         AaveAdapter aaveAdapter = new AaveAdapter(address(0x2), admin);
 
         // Basic setup
-        yieldOptimizer.addProtocol(address(aaveAdapter), 10000);
+        yieldOptimizer.addProtocol(address(aaveAdapter));
 
         vm.stopBroadcast();
 

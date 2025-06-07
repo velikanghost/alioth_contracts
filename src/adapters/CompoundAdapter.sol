@@ -26,6 +26,12 @@ interface ICToken {
     function supplyRatePerBlock() external view returns (uint256);
 
     function underlying() external view returns (address);
+
+    function getCash() external view returns (uint256);
+
+    function totalSupply() external view returns (uint256);
+
+    function totalBorrows() external view returns (uint256);
 }
 
 interface IComptroller {
@@ -433,6 +439,120 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
                 shares = 0;
             }
         }
+    }
+
+    /**
+     * @notice Check if protocol is currently operational
+     * @param token The token address
+     * @return isOperational True if protocol is fully operational
+     * @return statusMessage Human readable status message
+     */
+    function getOperationalStatus(
+        address token
+    ) external view returns (bool isOperational, string memory statusMessage) {
+        if (!supportedTokens[token]) {
+            return (false, "Token not supported");
+        }
+
+        address cTokenAddr = cTokens[token];
+        if (cTokenAddr == address(0)) {
+            return (false, "cToken not configured");
+        }
+
+        // Check if Compound protocol is working
+        try ICToken(cTokenAddr).balanceOf(address(this)) {
+            isOperational = true;
+            statusMessage = "Operational";
+        } catch {
+            isOperational = false;
+            statusMessage = "Protocol access failed";
+        }
+    }
+
+    /**
+     * @notice Get protocol health metrics for risk assessment
+     * @param token The token address
+     * @return healthScore Overall protocol health score (0-10000)
+     * @return liquidityDepth Available liquidity depth
+     * @return utilizationRate Current utilization rate (0-10000)
+     */
+    function getHealthMetrics(
+        address token
+    )
+        external
+        view
+        returns (
+            uint256 healthScore,
+            uint256 liquidityDepth,
+            uint256 utilizationRate
+        )
+    {
+        require(supportedTokens[token], "Token not supported");
+
+        // Compound is considered medium-high health protocol
+        healthScore = 8500; // 85% health score
+
+        address cTokenAddr = cTokens[token];
+        if (cTokenAddr != address(0)) {
+            try ICToken(cTokenAddr).getCash() returns (uint256 cash) {
+                liquidityDepth = cash;
+
+                // Get total borrows and supplies to calculate utilization
+                try ICToken(cTokenAddr).totalSupply() returns (uint256 supply) {
+                    try ICToken(cTokenAddr).totalBorrows() returns (
+                        uint256 borrows
+                    ) {
+                        if (supply > 0) {
+                            utilizationRate = (borrows * 10000) / supply;
+                        } else {
+                            utilizationRate = 0;
+                        }
+                    } catch {
+                        utilizationRate = 0;
+                    }
+                } catch {
+                    utilizationRate = 0;
+                }
+            } catch {
+                liquidityDepth = 0;
+                utilizationRate = 0;
+            }
+        } else {
+            liquidityDepth = 0;
+            utilizationRate = 0;
+        }
+    }
+
+    /**
+     * @notice Get protocol risk score for a token
+     * @param token The token address
+     * @return riskScore Risk score from 0 (lowest risk) to 10000 (highest risk)
+     */
+    function getRiskScore(
+        address token
+    ) external view returns (uint256 riskScore) {
+        require(supportedTokens[token], "Token not supported");
+
+        // Compound has medium risk due to:
+        // - Governance token risk
+        // - Oracle dependencies
+        // - Smart contract complexity
+        // - But battle-tested and well-audited
+        riskScore = 2500; // 25% risk score (medium-low risk)
+    }
+
+    /**
+     * @notice Get maximum recommended allocation percentage for this protocol
+     * @param token The token address
+     * @return maxAllocation Maximum allocation in basis points (e.g., 5000 = 50%)
+     */
+    function getMaxRecommendedAllocation(
+        address token
+    ) external view returns (uint256 maxAllocation) {
+        require(supportedTokens[token], "Token not supported");
+
+        // Compound can handle medium-large allocations
+        maxAllocation = 6000; // 60% maximum allocation
     }
 
     // ===== ADMIN FUNCTIONS =====
