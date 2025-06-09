@@ -102,4 +102,29 @@ contract ReceiptTokenFactory {
     function getReceiptTokenCount() external view returns (uint256 count) {
         return allReceiptTokens.length;
     }
+
+    /**
+     * @notice Remove a receipt token from tracking (only vault can call)
+     * @param asset The underlying asset address
+     */
+    function removeReceiptToken(address asset) external onlyVault {
+        asset.validateAddress();
+        address receiptToken = receiptTokens[asset];
+        require(receiptToken != address(0), "Receipt token does not exist");
+
+        // Remove from mapping
+        delete receiptTokens[asset];
+
+        // Remove from allReceiptTokens array
+        for (uint256 i = 0; i < allReceiptTokens.length; i++) {
+            if (allReceiptTokens[i] == receiptToken) {
+                // Move last element to this position and pop
+                allReceiptTokens[i] = allReceiptTokens[
+                    allReceiptTokens.length - 1
+                ];
+                allReceiptTokens.pop();
+                break;
+            }
+        }
+    }
 }

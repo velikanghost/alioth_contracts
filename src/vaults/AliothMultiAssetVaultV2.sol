@@ -500,7 +500,7 @@ contract AliothMultiAssetVaultV2 is ReentrancyGuard, Ownable {
         address receiptToken = receiptTokenFactory.createReceiptToken(
             token,
             symbol,
-            decimals
+            18 // Always use 18 decimals for receipt tokens for consistency
         );
 
         // Store token info
@@ -547,6 +547,9 @@ contract AliothMultiAssetVaultV2 is ReentrancyGuard, Ownable {
 
         address receiptTokenAddress = info.receiptToken;
         delete tokenInfo[token];
+
+        // Remove receipt token from factory tracking
+        receiptTokenFactory.removeReceiptToken(token);
 
         emit TokenRemoved(token, receiptTokenAddress);
     }
@@ -620,11 +623,22 @@ contract AliothMultiAssetVaultV2 is ReentrancyGuard, Ownable {
         uint256 totalSupply = receiptToken.totalSupply();
 
         if (totalSupply == 0 || totalValue == 0) {
-            // First deposit or no value - 1:1 ratio
-            shares = amount;
+            // First deposit or no value - normalize amount to 18 decimals for shares
+            shares = _normalizeToDecimals(amount, info.decimals, 18);
         } else {
             // shares = (amount * totalSupply) / totalValue
-            shares = (amount * totalSupply) / totalValue;
+            // Normalize both amount and totalValue to 18 decimals for consistent calculation
+            uint256 normalizedAmount = _normalizeToDecimals(
+                amount,
+                info.decimals,
+                18
+            );
+            uint256 normalizedTotalValue = _normalizeToDecimals(
+                totalValue,
+                info.decimals,
+                18
+            );
+            shares = (normalizedAmount * totalSupply) / normalizedTotalValue;
         }
     }
 
@@ -648,8 +662,40 @@ contract AliothMultiAssetVaultV2 is ReentrancyGuard, Ownable {
             return 0;
         }
 
-        // amount = (shares * totalValue) / totalSupply
-        amount = (shares * totalValue) / totalSupply;
+        // Normalize totalValue to 18 decimals, then convert back to token decimals
+        uint256 normalizedTotalValue = _normalizeToDecimals(
+            totalValue,
+            info.decimals,
+            18
+        );
+        uint256 normalizedAmount = (shares * normalizedTotalValue) /
+            totalSupply;
+        amount = _normalizeToDecimals(normalizedAmount, 18, info.decimals);
+    }
+
+    /**
+     * @notice Normalize amount from one decimal precision to another
+     * @param amount The amount to normalize
+     * @param fromDecimals Current decimal precision
+     * @param toDecimals Target decimal precision
+     * @return normalized The normalized amount
+     */
+    function _normalizeToDecimals(
+        uint256 amount,
+        uint8 fromDecimals,
+        uint8 toDecimals
+    ) internal pure returns (uint256 normalized) {
+        if (fromDecimals == toDecimals) {
+            return amount;
+        } else if (fromDecimals < toDecimals) {
+            // Scale up
+            uint8 decimalDiff = toDecimals - fromDecimals;
+            normalized = amount * (10 ** decimalDiff);
+        } else {
+            // Scale down
+            uint8 decimalDiff = fromDecimals - toDecimals;
+            normalized = amount / (10 ** decimalDiff);
+        }
     }
 
     // ===== UTILITY FUNCTIONS =====
@@ -675,10 +721,8 @@ contract AliothMultiAssetVaultV2 is ReentrancyGuard, Ownable {
         view
         returns (address[] memory receiptTokens)
     {
-        receiptTokens = new address[](supportedTokens.length);
-        for (uint256 i = 0; i < supportedTokens.length; i++) {
-            receiptTokens[i] = tokenInfo[supportedTokens[i]].receiptToken;
-        }
+        // Delegate to factory for consistent tracking
+        return receiptTokenFactory.getAllReceiptTokens();
     }
 
     /**
