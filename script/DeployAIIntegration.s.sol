@@ -14,11 +14,11 @@ import "../src/ai/EnhancedYieldOptimizer.sol";
 contract DeployAIIntegration is Script {
     // Existing contract addresses from Sepolia deployment
     address public constant EXISTING_CCIP_MESSENGER =
-        0xF52a57c9318E6E333F4A8167390695BCFB74DeE9;
+        0x631E8591bBbeAc63b6f65fc225a729Ed552E7856;
     address public constant EXISTING_CHAINLINK_FEED_MANAGER =
-        0xbFB677CB413dd235658E2178F5Fb41FDBEF546b7;
+        0xf8c5d7626223FBd7b8476823b12a2E3Aa689c135;
     address public constant EXISTING_YIELD_OPTIMIZER =
-        0xEbE975CAEb4f02220485C18581e7A0258F3BA717;
+        0xB09a4D0F7EAf855eD03afa0AE5Ff21AAcA91DEAE;
 
     // Deployment addresses will be set by the deployer
     address public admin;

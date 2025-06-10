@@ -7,13 +7,15 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../interfaces/IYieldOptimizer.sol";
 import "../libraries/ValidationLib.sol";
+import "../factories/ReceiptTokenFactory.sol";
+import "../tokens/AliothReceiptToken.sol";
 
 /**
- * @title AliothMultiAssetVault
- * @notice Multi-asset vault that manages positions across multiple tokens and protocols
- * @dev Single contract that handles unlimited tokens through the YieldOptimizer
+ * @title AliothVault
+ * @notice Multi asset vault that issues receipt tokens users can see in their wallets
+ * @dev Uses receipt tokens (atUSDC, atDAI, etc.) instead of internal share tracking
  */
-contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
+contract AliothVault is ReentrancyGuard, Ownable {
     using SafeTransferLib for ERC20;
     using ValidationLib for uint256;
     using ValidationLib for address;
@@ -21,27 +23,20 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     /// @notice The YieldOptimizer contract that manages cross-protocol allocation
     IYieldOptimizer public immutable yieldOptimizer;
 
-    /// @notice User position data for each token
-    struct UserPosition {
-        uint256 shares; // User's share amount
-        uint256 lastDepositTime; // Last deposit timestamp
-        uint256 totalDeposited; // Total amount ever deposited
-        uint256 totalWithdrawn; // Total amount ever withdrawn
-    }
+    /// @notice Factory for creating receipt tokens
+    ReceiptTokenFactory public immutable receiptTokenFactory;
 
     /// @notice Token configuration and metadata
     struct TokenInfo {
         bool isSupported; // Whether token is supported
-        uint256 totalShares; // Total shares for this token
+        address receiptToken; // Address of the receipt token (atToken)
         uint256 totalDeposits; // Total deposits ever made
         uint256 totalWithdrawals; // Total withdrawals ever made
         uint256 minDeposit; // Minimum deposit amount
         uint256 maxDeposit; // Maximum deposit amount (0 = no limit)
         string symbol; // Cached symbol for display
+        uint8 decimals; // Cached decimals
     }
-
-    /// @notice Mapping: token => user => position
-    mapping(address => mapping(address => UserPosition)) public positions;
 
     /// @notice Mapping: token => token info
     mapping(address => TokenInfo) public tokenInfo;
@@ -72,6 +67,7 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     event TokenDeposit(
         address indexed user,
         address indexed token,
+        address indexed receiptToken,
         uint256 amount,
         uint256 shares,
         uint256 timestamp
@@ -80,13 +76,19 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     event TokenWithdraw(
         address indexed user,
         address indexed token,
+        address indexed receiptToken,
         uint256 amount,
         uint256 shares,
         uint256 timestamp
     );
 
-    event TokenAdded(address indexed token, string symbol);
-    event TokenRemoved(address indexed token);
+    event TokenAdded(
+        address indexed token,
+        address indexed receiptToken,
+        string symbol
+    );
+
+    event TokenRemoved(address indexed token, address indexed receiptToken);
     event DepositFeeUpdated(uint256 oldFee, uint256 newFee);
     event WithdrawalFeeUpdated(uint256 oldFee, uint256 newFee);
     event FeeRecipientUpdated(address oldRecipient, address newRecipient);
@@ -98,16 +100,19 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
 
         yieldOptimizer = IYieldOptimizer(_yieldOptimizer);
         feeRecipient = _owner;
+
+        // Deploy the receipt token factory
+        receiptTokenFactory = new ReceiptTokenFactory(address(this));
     }
 
     // ===== CORE VAULT FUNCTIONS =====
 
     /**
-     * @notice Deposit tokens and receive shares in the optimized yield strategies
+     * @notice Deposit tokens and receive receipt tokens (atTokens)
      * @param token The token to deposit
      * @param amount The amount to deposit
      * @param minShares Minimum shares expected (slippage protection)
-     * @return shares The number of shares received
+     * @return shares The number of receipt tokens received
      */
     function deposit(
         address token,
@@ -145,23 +150,27 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         ERC20(token).safeApprove(address(yieldOptimizer), netAmount);
         uint256 optimizerShares = yieldOptimizer.deposit(token, netAmount, 0);
 
-        // Update user position
-        UserPosition storage position = positions[token][msg.sender];
-        position.shares += shares;
-        position.lastDepositTime = block.timestamp;
-        position.totalDeposited += amount;
+        // Mint receipt tokens to user
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
+        receiptToken.mint(msg.sender, shares);
 
         // Update token info
-        info.totalShares += shares;
         info.totalDeposits += amount;
 
-        emit TokenDeposit(msg.sender, token, amount, shares, block.timestamp);
+        emit TokenDeposit(
+            msg.sender,
+            token,
+            info.receiptToken,
+            amount,
+            shares,
+            block.timestamp
+        );
     }
 
     /**
-     * @notice Withdraw tokens by burning shares
+     * @notice Withdraw tokens by burning receipt tokens
      * @param token The token to withdraw
-     * @param shares The number of shares to burn
+     * @param shares The number of receipt tokens to burn
      * @param minAmount Minimum amount expected (slippage protection)
      * @return amount The amount of tokens received
      */
@@ -174,8 +183,13 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         shares.validateAmount();
         require(tokenInfo[token].isSupported, "Token not supported");
 
-        UserPosition storage position = positions[token][msg.sender];
-        require(position.shares >= shares, "Insufficient shares");
+        TokenInfo storage info = tokenInfo[token];
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
+
+        require(
+            receiptToken.balanceOf(msg.sender) >= shares,
+            "Insufficient receipt tokens"
+        );
 
         // Calculate amount to receive based on current vault value
         uint256 grossAmount = _calculateWithdrawAmount(token, shares);
@@ -185,20 +199,19 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         uint256 fee = (grossAmount * withdrawalFee) / 10000;
         uint256 netAmount = grossAmount - fee;
 
+        // Burn receipt tokens from user
+        receiptToken.burn(msg.sender, shares);
+
         // Withdraw from YieldOptimizer
+        // Pass a reasonable minimum amount (90% of gross) to allow for slippage in underlying protocols
+        uint256 minWithdrawAmount = (grossAmount * 9000) / 10000; // 90% of expected
         uint256 receivedAmount = yieldOptimizer.withdraw(
             token,
             shares,
-            grossAmount
+            minWithdrawAmount
         );
 
-        // Update user position
-        position.shares -= shares;
-        position.totalWithdrawn += receivedAmount;
-
         // Update token info
-        TokenInfo storage info = tokenInfo[token];
-        info.totalShares -= shares;
         info.totalWithdrawals += receivedAmount;
 
         // Send fee to recipient if applicable
@@ -207,18 +220,24 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
             receivedAmount -= fee;
         }
 
+        // Ensure user gets at least their minimum expected amount after fees
+        require(
+            receivedAmount >= minAmount,
+            "Insufficient amount after slippage"
+        );
+
         // Transfer tokens to user
         ERC20(token).safeTransfer(msg.sender, receivedAmount);
 
         emit TokenWithdraw(
             msg.sender,
             token,
+            info.receiptToken,
             receivedAmount,
             shares,
             block.timestamp
         );
 
-        // Return the actual amount received by the user
         return receivedAmount;
     }
 
@@ -260,20 +279,38 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
      * @notice Get user's position for a specific token
      * @param user The user address
      * @param token The token address
-     * @return shares User's shares
+     * @return shares User's receipt token balance
      * @return value Current value in underlying token
      * @return apy Current APY for the token
+     * @return receiptTokenAddress Address of the receipt token
      */
     function getUserPosition(
         address user,
         address token
-    ) external view returns (uint256 shares, uint256 value, uint256 apy) {
-        UserPosition memory position = positions[token][user];
-        shares = position.shares;
+    )
+        external
+        view
+        returns (
+            uint256 shares,
+            uint256 value,
+            uint256 apy,
+            address receiptTokenAddress
+        )
+    {
+        require(tokenInfo[token].isSupported, "Token not supported");
 
-        if (shares > 0 && tokenInfo[token].totalShares > 0) {
-            uint256 totalValue = yieldOptimizer.getTotalTVL(token);
-            value = (shares * totalValue) / tokenInfo[token].totalShares;
+        TokenInfo memory info = tokenInfo[token];
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
+
+        shares = receiptToken.balanceOf(user);
+        receiptTokenAddress = info.receiptToken;
+
+        if (shares > 0) {
+            uint256 totalSupply = receiptToken.totalSupply();
+            if (totalSupply > 0) {
+                uint256 totalValue = yieldOptimizer.getTotalTVL(token);
+                value = (shares * totalValue) / totalSupply;
+            }
         }
 
         apy = yieldOptimizer.getWeightedAPY(token);
@@ -283,7 +320,8 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
      * @notice Get all user positions across all tokens
      * @param user The user address
      * @return tokens Array of token addresses
-     * @return shares Array of share amounts
+     * @return receiptTokens Array of receipt token addresses
+     * @return shares Array of receipt token balances
      * @return values Array of current values
      * @return symbols Array of token symbols
      * @return apys Array of current APYs
@@ -295,6 +333,7 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         view
         returns (
             address[] memory tokens,
+            address[] memory receiptTokens,
             uint256[] memory shares,
             uint256[] memory values,
             string[] memory symbols,
@@ -304,13 +343,18 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         // Count non-zero positions
         uint256 count = 0;
         for (uint256 i = 0; i < supportedTokens.length; i++) {
-            if (positions[supportedTokens[i]][user].shares > 0) {
+            address token = supportedTokens[i];
+            AliothReceiptToken receiptToken = AliothReceiptToken(
+                tokenInfo[token].receiptToken
+            );
+            if (receiptToken.balanceOf(user) > 0) {
                 count++;
             }
         }
 
         // Allocate arrays
         tokens = new address[](count);
+        receiptTokens = new address[](count);
         shares = new uint256[](count);
         values = new uint256[](count);
         symbols = new string[](count);
@@ -320,20 +364,24 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         uint256 index = 0;
         for (uint256 i = 0; i < supportedTokens.length; i++) {
             address token = supportedTokens[i];
-            UserPosition memory position = positions[token][user];
+            TokenInfo memory info = tokenInfo[token];
+            AliothReceiptToken receiptToken = AliothReceiptToken(
+                info.receiptToken
+            );
+            uint256 userShares = receiptToken.balanceOf(user);
 
-            if (position.shares > 0) {
+            if (userShares > 0) {
                 tokens[index] = token;
-                shares[index] = position.shares;
-                symbols[index] = tokenInfo[token].symbol;
+                receiptTokens[index] = info.receiptToken;
+                shares[index] = userShares;
+                symbols[index] = info.symbol;
                 apys[index] = yieldOptimizer.getWeightedAPY(token);
 
                 // Calculate current value
-                uint256 totalValue = yieldOptimizer.getTotalTVL(token);
-                if (tokenInfo[token].totalShares > 0) {
-                    values[index] =
-                        (position.shares * totalValue) /
-                        tokenInfo[token].totalShares;
+                uint256 totalSupply = receiptToken.totalSupply();
+                if (totalSupply > 0) {
+                    uint256 totalValue = yieldOptimizer.getTotalTVL(token);
+                    values[index] = (userShares * totalValue) / totalSupply;
                 }
 
                 index++;
@@ -344,10 +392,10 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     /**
      * @notice Get vault stats for a specific token
      * @param token The token address
-     * @return totalShares Total shares for the token
+     * @return totalShares Total receipt tokens in circulation
      * @return totalValue Total value locked
      * @return apy Current weighted APY
-     * @return userCount Number of users with positions
+     * @return receiptTokenAddress Address of the receipt token
      */
     function getTokenStats(
         address token
@@ -358,17 +406,18 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
             uint256 totalShares,
             uint256 totalValue,
             uint256 apy,
-            uint256 userCount
+            address receiptTokenAddress
         )
     {
         require(tokenInfo[token].isSupported, "Token not supported");
 
-        totalShares = tokenInfo[token].totalShares;
+        TokenInfo memory info = tokenInfo[token];
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
+
+        totalShares = receiptToken.totalSupply();
         totalValue = yieldOptimizer.getTotalTVL(token);
         apy = yieldOptimizer.getWeightedAPY(token);
-
-        // Note: userCount would require additional tracking to be efficient
-        userCount = 0; // Placeholder - could be implemented with additional mappings
+        receiptTokenAddress = info.receiptToken;
     }
 
     /**
@@ -387,10 +436,10 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Preview how many shares would be received for a deposit
+     * @notice Preview how many receipt tokens would be received for a deposit
      * @param token The token address
      * @param amount The deposit amount
-     * @return shares Expected shares to receive
+     * @return shares Expected receipt tokens to receive
      */
     function previewDeposit(
         address token,
@@ -407,8 +456,8 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     /**
      * @notice Preview how much amount would be received for a withdrawal
      * @param token The token address
-     * @param shares The number of shares to withdraw
-     * @return amount Expected amount to receive
+     * @param shares The number of receipt tokens to withdraw
+     * @return amount Expected amount to receive (after fees and accounting for slippage)
      */
     function previewWithdraw(
         address token,
@@ -419,13 +468,16 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         uint256 grossAmount = _calculateWithdrawAmount(token, shares);
         uint256 fee = (grossAmount * withdrawalFee) / 10000;
 
-        return grossAmount - fee;
+        // Account for potential slippage in underlying protocols (10% buffer)
+        uint256 expectedReceived = (grossAmount * 9000) / 10000;
+
+        return expectedReceived > fee ? expectedReceived - fee : 0;
     }
 
     // ===== ADMIN FUNCTIONS =====
 
     /**
-     * @notice Add support for a new token
+     * @notice Add support for a new token and create its receipt token
      * @param token The token address
      * @param minDeposit Minimum deposit amount
      * @param maxDeposit Maximum deposit amount (0 = no limit)
@@ -438,28 +490,46 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         token.validateAddress();
         require(!tokenInfo[token].isSupported, "Token already supported");
 
-        // Get token symbol
+        // Get token metadata
+        ERC20 tokenContract = ERC20(token);
         string memory symbol;
-        try ERC20(token).symbol() returns (string memory _symbol) {
+        uint8 decimals;
+
+        try tokenContract.symbol() returns (string memory _symbol) {
             symbol = _symbol;
         } catch {
             symbol = "UNKNOWN";
         }
 
+        try tokenContract.decimals() returns (uint8 _decimals) {
+            decimals = _decimals;
+        } catch {
+            decimals = 18;
+        }
+
+        // Create receipt token
+        address receiptToken = receiptTokenFactory.createReceiptToken(
+            token,
+            symbol,
+            18 // Always use 18 decimals for receipt tokens for consistency
+        );
+
+        // Store token info
         tokenInfo[token] = TokenInfo({
             isSupported: true,
-            totalShares: 0,
+            receiptToken: receiptToken,
             totalDeposits: 0,
             totalWithdrawals: 0,
             minDeposit: minDeposit,
             maxDeposit: maxDeposit,
-            symbol: symbol
+            symbol: symbol,
+            decimals: decimals
         });
 
         tokenIndex[token] = supportedTokens.length;
         supportedTokens.push(token);
 
-        emit TokenAdded(token, symbol);
+        emit TokenAdded(token, receiptToken, symbol);
     }
 
     /**
@@ -468,7 +538,10 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
      */
     function removeToken(address token) external onlyOwner {
         require(tokenInfo[token].isSupported, "Token not supported");
-        require(tokenInfo[token].totalShares == 0, "Active positions exist");
+
+        TokenInfo memory info = tokenInfo[token];
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
+        require(receiptToken.totalSupply() == 0, "Active positions exist");
 
         // Remove from supportedTokens array
         uint256 index = tokenIndex[token];
@@ -482,9 +555,14 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
 
         supportedTokens.pop();
         delete tokenIndex[token];
+
+        address receiptTokenAddress = info.receiptToken;
         delete tokenInfo[token];
 
-        emit TokenRemoved(token);
+        // Remove receipt token from factory tracking
+        receiptTokenFactory.removeReceiptToken(token);
+
+        emit TokenRemoved(token, receiptTokenAddress);
     }
 
     /**
@@ -540,46 +618,95 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     // ===== INTERNAL FUNCTIONS =====
 
     /**
-     * @notice Calculate shares to mint for a deposit
+     * @notice Calculate receipt tokens to mint for a deposit
      * @param token The token address
      * @param amount The deposit amount (after fees)
-     * @return shares The number of shares to mint
+     * @return shares The number of receipt tokens to mint
      */
     function _calculateDepositShares(
         address token,
         uint256 amount
     ) internal view returns (uint256 shares) {
-        uint256 totalValue = yieldOptimizer.getTotalTVL(token);
-        uint256 totalShares = tokenInfo[token].totalShares;
+        TokenInfo memory info = tokenInfo[token];
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
 
-        if (totalShares == 0 || totalValue == 0) {
-            // First deposit or no value - 1:1 ratio
-            shares = amount;
+        uint256 totalValue = yieldOptimizer.getTotalTVL(token);
+        uint256 totalSupply = receiptToken.totalSupply();
+
+        if (totalSupply == 0 || totalValue == 0) {
+            // First deposit or no value - normalize amount to 18 decimals for shares
+            shares = _normalizeToDecimals(amount, info.decimals, 18);
         } else {
-            // shares = (amount * totalShares) / totalValue
-            shares = (amount * totalShares) / totalValue;
+            // shares = (amount * totalSupply) / totalValue
+            // Normalize both amount and totalValue to 18 decimals for consistent calculation
+            uint256 normalizedAmount = _normalizeToDecimals(
+                amount,
+                info.decimals,
+                18
+            );
+            uint256 normalizedTotalValue = _normalizeToDecimals(
+                totalValue,
+                info.decimals,
+                18
+            );
+            shares = (normalizedAmount * totalSupply) / normalizedTotalValue;
         }
     }
 
     /**
      * @notice Calculate amount to receive for a withdrawal
      * @param token The token address
-     * @param shares The number of shares to burn
+     * @param shares The number of receipt tokens to burn
      * @return amount The amount to receive (before fees)
      */
     function _calculateWithdrawAmount(
         address token,
         uint256 shares
     ) internal view returns (uint256 amount) {
-        uint256 totalValue = yieldOptimizer.getTotalTVL(token);
-        uint256 totalShares = tokenInfo[token].totalShares;
+        TokenInfo memory info = tokenInfo[token];
+        AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
 
-        if (totalShares == 0) {
+        uint256 totalValue = yieldOptimizer.getTotalTVL(token);
+        uint256 totalSupply = receiptToken.totalSupply();
+
+        if (totalSupply == 0) {
             return 0;
         }
 
-        // amount = (shares * totalValue) / totalShares
-        amount = (shares * totalValue) / totalShares;
+        // Normalize totalValue to 18 decimals, then convert back to token decimals
+        uint256 normalizedTotalValue = _normalizeToDecimals(
+            totalValue,
+            info.decimals,
+            18
+        );
+        uint256 normalizedAmount = (shares * normalizedTotalValue) /
+            totalSupply;
+        amount = _normalizeToDecimals(normalizedAmount, 18, info.decimals);
+    }
+
+    /**
+     * @notice Normalize amount from one decimal precision to another
+     * @param amount The amount to normalize
+     * @param fromDecimals Current decimal precision
+     * @param toDecimals Target decimal precision
+     * @return normalized The normalized amount
+     */
+    function _normalizeToDecimals(
+        uint256 amount,
+        uint8 fromDecimals,
+        uint8 toDecimals
+    ) internal pure returns (uint256 normalized) {
+        if (fromDecimals == toDecimals) {
+            return amount;
+        } else if (fromDecimals < toDecimals) {
+            // Scale up
+            uint8 decimalDiff = toDecimals - fromDecimals;
+            normalized = amount * (10 ** decimalDiff);
+        } else {
+            // Scale down
+            uint8 decimalDiff = fromDecimals - toDecimals;
+            normalized = amount / (10 ** decimalDiff);
+        }
     }
 
     // ===== UTILITY FUNCTIONS =====
@@ -597,6 +724,19 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
     }
 
     /**
+     * @notice Get all receipt tokens
+     * @return receiptTokens Array of receipt token addresses
+     */
+    function getAllReceiptTokens()
+        external
+        view
+        returns (address[] memory receiptTokens)
+    {
+        // Delegate to factory for consistent tracking
+        return receiptTokenFactory.getAllReceiptTokens();
+    }
+
+    /**
      * @notice Check if a token is supported
      * @param token The token address
      * @return supported Whether the token is supported
@@ -605,6 +745,18 @@ contract AliothMultiAssetVault is ReentrancyGuard, Ownable {
         address token
     ) external view returns (bool supported) {
         return tokenInfo[token].isSupported;
+    }
+
+    /**
+     * @notice Get the receipt token for a specific asset
+     * @param token The asset token address
+     * @return receiptToken The receipt token address
+     */
+    function getReceiptToken(
+        address token
+    ) external view returns (address receiptToken) {
+        require(tokenInfo[token].isSupported, "Token not supported");
+        return tokenInfo[token].receiptToken;
     }
 
     /**
