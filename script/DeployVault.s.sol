@@ -4,37 +4,50 @@ pragma solidity ^0.8.19;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/vaults/AliothVault.sol";
-import "../src/core/YieldOptimizer.sol";
+import "../src/interfaces/IEnhancedYieldOptimizer.sol";
 
 /**
  * @title DeployVault
  * @notice Script to deploy the Alioth Multi-Asset Vault V2 with Receipt Tokens
+ * @dev Uses EnhancedYieldOptimizer instead of original YieldOptimizer
  */
 contract DeployVault is Script {
+    // Sepolia Testnet
+    address constant ENHANCED_YIELD_OPTIMIZER_SEPOLIA =
+        0xDeE85d65aaDaff8e10164e05e0a8d2AD871e8db0;
+
+    // Arbitrum Sepolia Testnet
+    address constant ENHANCED_YIELD_OPTIMIZER_ARBITRUM_SEPOLIA =
+        0x0000000000000000000000000000000000000000;
+
+    // Base Sepolia Testnet
+    address constant ENHANCED_YIELD_OPTIMIZER_BASE_SEPOLIA =
+        0x0000000000000000000000000000000000000000;
+
+    // Avalanche Fuji Testnet
+    address constant ENHANCED_YIELD_OPTIMIZER_AVALANCHE_FUJI =
+        0x0000000000000000000000000000000000000000;
+
     // Network configurations
     struct NetworkConfig {
-        address yieldOptimizer;
+        address enhancedYieldOptimizer;
         address admin;
+        string networkName;
     }
 
-    // Network configurations
-    mapping(string => NetworkConfig) public networkConfigs;
-
     function setUp() public {
-        _setupNetworkConfigs();
+        // No setup needed - configurations are handled in getDeploymentConfig()
     }
 
     /**
      * @notice Get deployment configuration with proper admin handling
      */
-    function getDeploymentConfig(
-        string memory networkName
-    ) internal view returns (NetworkConfig memory config) {
-        config = networkConfigs[networkName];
-        require(
-            config.yieldOptimizer != address(0),
-            "Network config not found"
-        );
+    function getDeploymentConfig()
+        internal
+        view
+        returns (NetworkConfig memory config)
+    {
+        uint256 chainId = block.chainid;
 
         // Get the actual deployer address (not DEFAULT_SENDER)
         // In broadcast context, tx.origin is the actual signer
@@ -43,27 +56,69 @@ contract DeployVault is Script {
         // Get admin from environment or use deployer as fallback
         address admin = vm.envOr("ADMIN_ADDRESS", deployer);
 
-        // Override the admin in config with the proper value
-        config.admin = admin;
+        if (chainId == 11155111) {
+            // Ethereum Sepolia
+            config = NetworkConfig({
+                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_SEPOLIA,
+                admin: admin,
+                networkName: "Sepolia"
+            });
+        } else if (chainId == 421614) {
+            // Arbitrum Sepolia
+            config = NetworkConfig({
+                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_ARBITRUM_SEPOLIA,
+                admin: admin,
+                networkName: "Arbitrum Sepolia"
+            });
+        } else if (chainId == 84532) {
+            // Base Sepolia
+            config = NetworkConfig({
+                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_BASE_SEPOLIA,
+                admin: admin,
+                networkName: "Base Sepolia"
+            });
+        } else if (chainId == 43113) {
+            // Avalanche Fuji
+            config = NetworkConfig({
+                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_AVALANCHE_FUJI,
+                admin: admin,
+                networkName: "Avalanche Fuji"
+            });
+        } else {
+            revert(
+                "Unsupported network - only Sepolia, Arbitrum Sepolia, Base Sepolia, and Avalanche Fuji are supported"
+            );
+        }
+
+        require(
+            config.enhancedYieldOptimizer != address(0),
+            string(
+                abi.encodePacked(
+                    "EnhancedYieldOptimizer not configured for ",
+                    config.networkName,
+                    ". Please update the constant in this script."
+                )
+            )
+        );
     }
 
     /**
      * @notice Default deployment function for Sepolia
      */
     function run() external {
-        run("sepolia");
+        run("auto"); // Auto-detect network
     }
 
     /**
      * @notice Main deployment function
-     * @param networkName The network to deploy on (e.g., "sepolia", "mainnet")
+     * @param networkName The network to deploy on (e.g., "sepolia", "arbitrum") or "auto" for auto-detection
      */
     function run(string memory networkName) public {
-        NetworkConfig memory config = getDeploymentConfig(networkName);
+        NetworkConfig memory config = getDeploymentConfig();
 
         console.log("=== Alioth Multi-Asset Vault V2 Deployment ===");
-        console.log("Network:", networkName);
-        console.log("YieldOptimizer:", config.yieldOptimizer);
+        console.log("Network:", config.networkName);
+        console.log("EnhancedYieldOptimizer:", config.enhancedYieldOptimizer);
         console.log("Admin:", config.admin);
 
         vm.startBroadcast();
@@ -75,7 +130,7 @@ contract DeployVault is Script {
 
         // Deploy the Multi-Asset Vault V2 with the configured admin as owner
         AliothVault vaultV2 = new AliothVault(
-            config.yieldOptimizer,
+            config.enhancedYieldOptimizer,
             config.admin // Use configured admin
         );
 
@@ -93,6 +148,32 @@ contract DeployVault is Script {
             "Owner mismatch - deployment failed"
         );
 
+        // Authorize the vault in the EnhancedYieldOptimizer
+        console.log("\n=== Setting up authorization ===");
+        IEnhancedYieldOptimizer optimizer = IEnhancedYieldOptimizer(
+            config.enhancedYieldOptimizer
+        );
+
+        try optimizer.authorizeVault(address(vaultV2)) {
+            console.log("SUCCESS: Vault authorized in EnhancedYieldOptimizer");
+        } catch {
+            console.log(
+                "FAILED: Failed to authorize vault - may need to be done manually by admin"
+            );
+            console.log("   Run this command manually:");
+            console.log(
+                string(
+                    abi.encodePacked(
+                        "   cast send ",
+                        vm.toString(config.enhancedYieldOptimizer),
+                        ' "authorizeVault(address)" ',
+                        vm.toString(address(vaultV2)),
+                        " --account ADMIN_ACCOUNT"
+                    )
+                )
+            );
+        }
+
         vm.stopBroadcast();
 
         console.log("\n=== Deployment Summary ===");
@@ -102,77 +183,85 @@ contract DeployVault is Script {
             address(vaultV2.receiptTokenFactory())
         );
         console.log("Owner:", config.admin);
-        console.log("YieldOptimizer Integration:", config.yieldOptimizer);
+        console.log(
+            "EnhancedYieldOptimizer Integration:",
+            config.enhancedYieldOptimizer
+        );
+
+        console.log("\n=== Authorization Setup ===");
+        console.log("REQUIRED: Vault needs authorization from optimizer admin");
+        console.log(
+            "REQUIRED: AI backends need authorization from vault owner"
+        );
+        console.log(
+            "REQUIRED: Users only need to approve vault for token spending"
+        );
 
         console.log("\n=== Key Features ===");
         console.log("- Issues receipt tokens (atUSDC, atDAI, etc.)");
         console.log("- Users can see positions in their wallets");
         console.log("- Receipt tokens are transferable ERC20s");
         console.log("- Automatic factory deployment for new tokens");
+        console.log(
+            "- AI-driven yield optimization via EnhancedYieldOptimizer"
+        );
+        console.log("- Proper authorization separation: Vault vs AI backends");
 
         console.log("\n=== Next Steps ===");
-        console.log("1. Verify the contracts on block explorer");
-        console.log("2. Add tokens manually using:");
+        console.log(
+            "1. Authorize vault in EnhancedYieldOptimizer (if not done automatically):"
+        );
+        console.log(
+            string(
+                abi.encodePacked(
+                    "   cast send ",
+                    vm.toString(config.enhancedYieldOptimizer),
+                    ' "authorizeVault(address)" ',
+                    vm.toString(address(vaultV2)),
+                    " --account ADMIN_ACCOUNT"
+                )
+            )
+        );
+        console.log("2. Authorize AI backends in vault:");
         console.log(
             string(
                 abi.encodePacked(
                     "   cast send ",
                     vm.toString(address(vaultV2)),
-                    ' "addToken(address,uint256,uint256)" TOKEN_ADDRESS MIN_DEPOSIT MAX_DEPOSIT --rpc-url https://sepolia.infura.io/v3/c7c5f43ca9bc47afa93181f412d404f5 --account monad'
+                    ' "authorizeAIBackend(address)" AI_BACKEND_ADDRESS',
+                    " --account VAULT_OWNER"
                 )
             )
         );
-
-        console.log("3. Check receipt tokens with:");
+        console.log("3. Add supported adapters to EnhancedYieldOptimizer");
+        console.log("4. Add tokens manually using:");
         console.log(
             string(
                 abi.encodePacked(
-                    "   cast call ",
+                    "   cast send ",
                     vm.toString(address(vaultV2)),
-                    ' "getReceiptToken(address)" TOKEN_ADDRESS --rpc-url https://sepolia.infura.io/v3/c7c5f43ca9bc47afa93181f412d404f5'
+                    ' "addToken(address,uint256,uint256)" TOKEN_ADDRESS MIN_DEPOSIT MAX_DEPOSIT --rpc-url RPC_URL --account ACCOUNT'
                 )
             )
         );
 
-        // Verification commands
-        console.log("\n=== Verification Commands ===");
-        console.log("Vault V2 verification:");
+        console.log("5. Test deposit flow:");
+        console.log("   a. User approves vault for token spending");
+        console.log("   b. AI backend calls vault.deposit()");
         console.log(
-            string(
-                abi.encodePacked(
-                    "forge verify-contract ",
-                    vm.toString(address(vaultV2)),
-                    " src/vaults/AliothVault.sol:AliothVault --chain-id ",
-                    vm.toString(block.chainid),
-                    " --constructor-args ",
-                    vm.toString(abi.encode(config.yieldOptimizer, config.admin))
-                )
-            )
+            "   c. Vault calls optimizer.executeSingleOptimizedDeposit()"
         );
-
-        console.log("\nReceipt Token Factory verification:");
-        console.log(
-            string(
-                abi.encodePacked(
-                    "forge verify-contract ",
-                    vm.toString(address(vaultV2.receiptTokenFactory())),
-                    " src/factories/ReceiptTokenFactory.sol:ReceiptTokenFactory --chain-id ",
-                    vm.toString(block.chainid),
-                    " --constructor-args ",
-                    vm.toString(abi.encode(address(vaultV2)))
-                )
-            )
-        );
+        console.log("   d. User receives receipt tokens");
 
         // Log all deployment info instead of saving to file
         console.log("\n=== Deployment Info (Save This) ===");
-        console.log("Network:", networkName);
+        console.log("Network:", config.networkName);
         console.log("Multi-Asset Vault V2:", address(vaultV2));
         console.log(
             "Receipt Token Factory:",
             address(vaultV2.receiptTokenFactory())
         );
-        console.log("YieldOptimizer:", config.yieldOptimizer);
+        console.log("EnhancedYieldOptimizer:", config.enhancedYieldOptimizer);
         console.log("Admin/Owner:", config.admin);
         console.log("Block Number:", block.number);
         console.log("Chain ID:", block.chainid);
@@ -183,14 +272,14 @@ contract DeployVault is Script {
      * @notice Deploy to localhost/anvil for testing
      */
     function runLocal() external {
-        // For local testing, we need to deploy YieldOptimizer first or use existing address
-        address yieldOptimizerAddr = vm.envOr(
-            "YIELD_OPTIMIZER_ADDRESS",
+        // For local testing, we need to deploy EnhancedYieldOptimizer first or use existing address
+        address enhancedYieldOptimizerAddr = vm.envOr(
+            "ENHANCED_YIELD_OPTIMIZER_ADDRESS",
             address(0)
         );
         require(
-            yieldOptimizerAddr != address(0),
-            "Set YIELD_OPTIMIZER_ADDRESS env var"
+            enhancedYieldOptimizerAddr != address(0),
+            "Set ENHANCED_YIELD_OPTIMIZER_ADDRESS env var for local testing"
         );
 
         vm.startBroadcast();
@@ -198,7 +287,10 @@ contract DeployVault is Script {
         // Use tx.origin as admin for local testing
         address admin = tx.origin;
 
-        AliothVault vaultV2 = new AliothVault(yieldOptimizerAddr, admin);
+        AliothVault vaultV2 = new AliothVault(
+            enhancedYieldOptimizerAddr,
+            admin
+        );
 
         console.log(
             "Local Multi-Asset Vault V2 deployed at:",
@@ -213,39 +305,11 @@ contract DeployVault is Script {
         vm.stopBroadcast();
     }
 
-    function _setupNetworkConfigs() internal {
-        // Sepolia Testnet Configuration
-        networkConfigs["sepolia"] = NetworkConfig({
-            yieldOptimizer: vm.envOr("SEPOLIA_YIELD_OPTIMIZER", address(0)),
-            admin: address(0) // Will be set dynamically in getDeploymentConfig
-        });
-
-        // Ethereum Mainnet Configuration
-        networkConfigs["mainnet"] = NetworkConfig({
-            yieldOptimizer: vm.envOr("MAINNET_YIELD_OPTIMIZER", address(0)),
-            admin: address(0) // Will be set dynamically in getDeploymentConfig
-        });
-
-        // Polygon Configuration
-        networkConfigs["polygon"] = NetworkConfig({
-            yieldOptimizer: vm.envOr("POLYGON_YIELD_OPTIMIZER", address(0)),
-            admin: address(0) // Will be set dynamically in getDeploymentConfig
-        });
-
-        // Arbitrum Configuration
-        networkConfigs["arbitrum"] = NetworkConfig({
-            yieldOptimizer: vm.envOr("ARBITRUM_YIELD_OPTIMIZER", address(0)),
-            admin: address(0) // Will be set dynamically in getDeploymentConfig
-        });
-    }
-
     /**
-     * @notice Utility function to get deployment info for integration
+     * @notice Utility function to get network config for integration
      */
-    function getNetworkConfig(
-        string memory networkName
-    ) external view returns (NetworkConfig memory) {
-        return networkConfigs[networkName];
+    function getNetworkConfig() external view returns (NetworkConfig memory) {
+        return getDeploymentConfig();
     }
 
     /**
@@ -256,7 +320,10 @@ contract DeployVault is Script {
 
         console.log("=== Vault V2 Verification ===");
         console.log("Vault Address:", vaultAddress);
-        console.log("YieldOptimizer:", address(vault.yieldOptimizer()));
+        console.log(
+            "Enhanced Yield Optimizer:",
+            address(vault.enhancedYieldOptimizer())
+        );
         console.log(
             "Receipt Token Factory:",
             address(vault.receiptTokenFactory())
@@ -265,87 +332,5 @@ contract DeployVault is Script {
         console.log("Fee Recipient:", vault.feeRecipient());
         console.log("Deposit Fee:", vault.depositFee());
         console.log("Withdrawal Fee:", vault.withdrawalFee());
-        console.log("Supported Token Count:", vault.getSupportedTokenCount());
-
-        address[] memory tokens = vault.getSupportedTokens();
-        console.log("\nSupported Tokens:");
-        for (uint256 i = 0; i < tokens.length; i++) {
-            console.log("  Token", i, ":", tokens[i]);
-            console.log("    Supported:", vault.isTokenSupported(tokens[i]));
-            try vault.getReceiptToken(tokens[i]) returns (
-                address receiptToken
-            ) {
-                console.log("    Receipt Token:", receiptToken);
-            } catch {
-                console.log("    Receipt Token: Not created yet");
-            }
-        }
-
-        address[] memory receiptTokens = vault.getAllReceiptTokens();
-        console.log("\nReceipt Tokens:");
-        for (uint256 i = 0; i < receiptTokens.length; i++) {
-            console.log("  Receipt Token", i, ":", receiptTokens[i]);
-        }
-    }
-
-    /**
-     * @notice Helper function to test receipt token creation
-     */
-    function testReceiptTokenCreation(
-        address vaultAddress,
-        address tokenAddress,
-        uint256 minDeposit,
-        uint256 maxDeposit
-    ) external {
-        AliothVault vault = AliothVault(vaultAddress);
-
-        console.log("=== Testing Receipt Token Creation ===");
-        console.log("Vault:", vaultAddress);
-        console.log("Token:", tokenAddress);
-
-        vm.startBroadcast();
-
-        // This will create the receipt token automatically
-        vault.addToken(tokenAddress, minDeposit, maxDeposit);
-
-        address receiptToken = vault.getReceiptToken(tokenAddress);
-        console.log("Created Receipt Token:", receiptToken);
-
-        vm.stopBroadcast();
-    }
-
-    /**
-     * @notice Helper function to check user receipt tokens
-     */
-    function checkUserReceiptTokens(
-        address vaultAddress,
-        address userAddress
-    ) external view {
-        AliothVault vault = AliothVault(vaultAddress);
-
-        console.log("=== User Receipt Token Portfolio ===");
-        console.log("Vault:", vaultAddress);
-        console.log("User:", userAddress);
-
-        (
-            address[] memory tokens,
-            address[] memory receiptTokens,
-            uint256[] memory shares,
-            uint256[] memory values,
-            string[] memory symbols,
-            uint256[] memory apys
-        ) = vault.getUserPortfolio(userAddress);
-
-        console.log("Portfolio size:", tokens.length);
-
-        for (uint256 i = 0; i < tokens.length; i++) {
-            console.log("\nPosition", i, ":");
-            console.log("  Token:", tokens[i]);
-            console.log("  Receipt Token:", receiptTokens[i]);
-            console.log("  Symbol:", symbols[i]);
-            console.log("  Receipt Token Balance:", shares[i]);
-            console.log("  Underlying Value:", values[i]);
-            console.log("  APY:", apys[i], "bps");
-        }
     }
 }

@@ -3,186 +3,227 @@ pragma solidity ^0.8.19;
 
 import "forge-std/Script.sol";
 
-import "../src/ai/EnhancedChainlinkFeedManager.sol";
-import "../src/ai/EnhancedYieldOptimizer.sol";
+import "../src/core/EnhancedChainlinkFeedManager.sol";
+import "../src/core/EnhancedYieldOptimizer.sol";
+import "../src/core/CCIPMessenger.sol";
 
 /**
  * @title DeployAIIntegration
- * @notice Deployment script for AI Integration contracts
- * @dev Deploys AI Authorization Manager, Enhanced ChainlinkFeedManager, and Enhanced YieldOptimizer
+ * @notice Deployment script for AI core components only
+ * @dev Deploys Enhanced ChainlinkFeedManager, CCIPMessenger, and standalone EnhancedYieldOptimizer
  */
 contract DeployAIIntegration is Script {
-    // Existing contract addresses from Sepolia deployment
-    address public constant EXISTING_CCIP_MESSENGER =
-        0x631E8591bBbeAc63b6f65fc225a729Ed552E7856;
-    address public constant EXISTING_CHAINLINK_FEED_MANAGER =
-        0xf8c5d7626223FBd7b8476823b12a2E3Aa689c135;
-    address public constant EXISTING_YIELD_OPTIMIZER =
-        0xB09a4D0F7EAf855eD03afa0AE5Ff21AAcA91DEAE;
+    // ✅ CHAINLINK CCIP ROUTER ADDRESSES (TESTNET SPECIFIC)
+    address constant CCIP_ROUTER_SEPOLIA =
+        0x0BF3dE8c5D3e8A2B34D2BEeB17ABfCeBaf363A59;
+    address constant CCIP_ROUTER_ARBITRUM_SEPOLIA =
+        0x2a9C5afB0d0e4BAb2BCdaE109EC4b0c4Be15a165;
+    address constant CCIP_ROUTER_BASE_SEPOLIA =
+        0xD3b06cEbF099CE7DA4AcCf578aaebFDBd6e88a93;
+    address constant CCIP_ROUTER_AVALANCHE_FUJI =
+        0xF694E193200268f9a4868e4Aa017A0118C9a8177;
 
-    // Deployment addresses will be set by the deployer
-    address public admin;
-    address public aiBackend;
+    // ✅ LINK TOKEN ADDRESSES (TESTNET SPECIFIC)
+    address constant LINK_SEPOLIA = 0x779877A7B0D9E8603169DdbD7836e478b4624789;
+    address constant LINK_ARBITRUM_SEPOLIA =
+        0xb1D4538B4571d411F07960EF2838Ce337FE1E80E;
+    address constant LINK_BASE_SEPOLIA =
+        0xE4aB69C077896252FAFBD49EFD26B5D171A32410;
+    address constant LINK_AVALANCHE_FUJI =
+        0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846;
 
-    // Deployed contract instances
-    EnhancedChainlinkFeedManager public enhancedFeedManager;
-    EnhancedYieldOptimizer public enhancedYieldOptimizer;
+    struct DeploymentConfig {
+        address ccipRouter;
+        address linkToken;
+        address admin;
+        string networkName;
+    }
 
-    function setUp() public {
+    struct DeployedContracts {
+        EnhancedChainlinkFeedManager enhancedFeedManager;
+        CCIPMessenger ccipMessenger;
+        EnhancedYieldOptimizer enhancedYieldOptimizer;
+    }
+
+    function run() external {
+        // Get deployment configuration
+        DeploymentConfig memory config = getDeploymentConfig();
+
+        console.log("=== Deploying AI Core Components ===");
+        console.log("Network:", config.networkName);
+        console.log("Admin:", config.admin);
+        console.log("CCIP Router:", config.ccipRouter);
+        console.log("LINK Token:", config.linkToken);
+
+        vm.startBroadcast();
+
+        // Deploy contracts
+        DeployedContracts memory contracts = deployContracts(config);
+
+        // Configure contracts
+        configureContracts(contracts, config);
+
+        vm.stopBroadcast();
+
+        // Log deployment addresses
+        logDeployment(contracts, config);
+    }
+
+    function getDeploymentConfig()
+        internal
+        view
+        returns (DeploymentConfig memory config)
+    {
+        uint256 chainId = block.chainid;
+
         // Get the actual deployer address (not DEFAULT_SENDER)
         // In broadcast context, tx.origin is the actual signer
         address deployer = tx.origin;
 
-        // Get admin from environment or use deployer
-        admin = vm.envOr("ADMIN_ADDRESS", deployer);
+        // Get admin from environment or use deployer as fallback
+        address admin = vm.envOr("ADMIN_ADDRESS", deployer);
 
-        // AI backend is always the deployer address for simplicity
-        aiBackend = admin;
+        if (chainId == 11155111) {
+            // Ethereum Sepolia
+            config = DeploymentConfig({
+                ccipRouter: CCIP_ROUTER_SEPOLIA,
+                linkToken: LINK_SEPOLIA,
+                admin: admin,
+                networkName: "Sepolia"
+            });
+        } else if (chainId == 421614) {
+            // Arbitrum Sepolia
+            config = DeploymentConfig({
+                ccipRouter: CCIP_ROUTER_ARBITRUM_SEPOLIA,
+                linkToken: LINK_ARBITRUM_SEPOLIA,
+                admin: admin,
+                networkName: "Arbitrum Sepolia"
+            });
+        } else if (chainId == 84532) {
+            // Base Sepolia
+            config = DeploymentConfig({
+                ccipRouter: CCIP_ROUTER_BASE_SEPOLIA,
+                linkToken: LINK_BASE_SEPOLIA,
+                admin: admin,
+                networkName: "Base Sepolia"
+            });
+        } else if (chainId == 43113) {
+            // Avalanche Fuji
+            config = DeploymentConfig({
+                ccipRouter: CCIP_ROUTER_AVALANCHE_FUJI,
+                linkToken: LINK_AVALANCHE_FUJI,
+                admin: admin,
+                networkName: "Avalanche Fuji"
+            });
+        } else {
+            revert(
+                "Unsupported network - only Sepolia, Arbitrum Sepolia, Base Sepolia, and Avalanche Fuji are supported"
+            );
+        }
     }
 
-    function run() public {
-        vm.startBroadcast();
+    function deployContracts(
+        DeploymentConfig memory config
+    ) internal returns (DeployedContracts memory contracts) {
+        console.log("\n=== Deploying AI Core Contracts ===");
 
-        console.log("Deploying AI Integration contracts...");
-        console.log("Admin address:", admin);
-        console.log("AI Backend address:", aiBackend);
+        // Get the actual broadcaster address (tx.origin in broadcast context)
+        address deployer = tx.origin;
+        console.log("Deployer (from tx.origin):", deployer);
+        console.log("Configured Admin:", config.admin);
 
         // 1. Deploy Enhanced ChainlinkFeedManager
-        console.log("\n1. Deploying EnhancedChainlinkFeedManager...");
-        enhancedFeedManager = new EnhancedChainlinkFeedManager(admin);
-        console.log(
-            "EnhancedChainlinkFeedManager deployed at:",
-            address(enhancedFeedManager)
-        );
-
-        // 2. Deploy Enhanced YieldOptimizer
-        console.log("\n2. Deploying EnhancedYieldOptimizer...");
-        enhancedYieldOptimizer = new EnhancedYieldOptimizer(
-            EXISTING_CCIP_MESSENGER,
-            EXISTING_CHAINLINK_FEED_MANAGER,
-            address(enhancedFeedManager),
-            admin
+        console.log("1. Deploying EnhancedChainlinkFeedManager...");
+        contracts.enhancedFeedManager = new EnhancedChainlinkFeedManager(
+            config.admin
         );
         console.log(
-            "EnhancedYieldOptimizer deployed at:",
-            address(enhancedYieldOptimizer)
+            "   EnhancedChainlinkFeedManager deployed at:",
+            address(contracts.enhancedFeedManager)
         );
 
-        // 3. Configure contracts
-        console.log("\n3. Configuring contracts...");
-
-        // Authorize AI backend
-        enhancedYieldOptimizer.authorizeAIBackend(aiBackend);
-        console.log("AI Backend authorized:", aiBackend);
-
-        // Set up enhanced feed manager with some default projected APYs
-        // Note: In production, you would set actual token feeds here
-        console.log("Enhanced feed manager configured");
-
-        // Update cross-token parameters if needed
-        enhancedYieldOptimizer.updateCrossTokenParams(
-            300, // 3% max slippage
-            50, // 0.5% min yield improvement
-            5 // 5 max tokens per operation
+        // 2. Deploy CCIPMessenger
+        console.log("2. Deploying CCIPMessenger...");
+        contracts.ccipMessenger = new CCIPMessenger(
+            config.ccipRouter,
+            config.linkToken,
+            config.admin // Use admin as fee collector
         );
-        console.log("Cross-token parameters updated");
-
-        vm.stopBroadcast();
-
-        // 4. Log deployment summary
-        console.log("\n=== AI Integration Deployment Summary ===");
         console.log(
-            "EnhancedChainlinkFeedManager:",
-            address(enhancedFeedManager)
+            "   CCIPMessenger deployed at:",
+            address(contracts.ccipMessenger)
         );
-        console.log("EnhancedYieldOptimizer:", address(enhancedYieldOptimizer));
-        console.log("Admin:", admin);
-        console.log("Authorized AI Backend:", aiBackend);
-        console.log("Deployment completed successfully!");
 
-        // 5. Verify contracts (optional)
-        _verifyContracts();
+        // 3. Deploy standalone EnhancedYieldOptimizer
+        console.log("3. Deploying standalone EnhancedYieldOptimizer...");
+        contracts.enhancedYieldOptimizer = new EnhancedYieldOptimizer(
+            address(contracts.ccipMessenger), // Use CCIPMessenger instead of router
+            address(contracts.enhancedFeedManager),
+            config.admin
+        );
+        console.log(
+            "   EnhancedYieldOptimizer deployed at:",
+            address(contracts.enhancedYieldOptimizer)
+        );
     }
 
-    function _verifyContracts() internal view {
-        console.log("\n=== Contract Verification ===");
+    function configureContracts(
+        DeployedContracts memory contracts,
+        DeploymentConfig memory config
+    ) internal {
+        console.log("\n=== Configuring Contracts ===");
 
-        // Verify Enhanced ChainlinkFeedManager
-        require(
-            enhancedFeedManager.hasRole(
-                enhancedFeedManager.DEFAULT_ADMIN_ROLE(),
-                admin
-            ),
-            "Admin role not set"
-        );
-        console.log("EnhancedChainlinkFeedManager verification passed");
+        // Authorize deployer as AI backend for testing
+        contracts.enhancedYieldOptimizer.authorizeAIBackend(config.admin);
+        console.log("1. AI Backend authorized:", config.admin);
 
-        // Verify Enhanced YieldOptimizer
-        require(
-            enhancedYieldOptimizer.admin() == admin,
-            "Admin not set correctly"
+        // Update rebalance parameters
+        contracts.enhancedYieldOptimizer.updateRebalanceParams(
+            900, // 15 minutes rebalance interval
+            100 // 1% minimum yield improvement
         );
-        require(
-            enhancedYieldOptimizer.authorizedAIBackends(aiBackend),
-            "AI backend not authorized"
-        );
-        require(
-            address(enhancedYieldOptimizer.enhancedFeedManager()) ==
-                address(enhancedFeedManager),
-            "Enhanced Feed Manager not set"
-        );
-        console.log("EnhancedYieldOptimizer verification passed");
+        console.log("2. Rebalance parameters updated");
 
-        console.log("All contracts verified successfully!");
+        console.log("Configuration completed!");
     }
 
-    /**
-     * @notice Helper function to get deployment addresses
-     * @return enhancedFeed Address of Enhanced ChainlinkFeedManager
-     * @return enhancedOptimizer Address of Enhanced YieldOptimizer
-     */
-    function getDeployedAddresses()
-        public
-        view
-        returns (address enhancedFeed, address enhancedOptimizer)
-    {
-        return (address(enhancedFeedManager), address(enhancedYieldOptimizer));
-    }
-
-    /**
-     * @notice Function to test basic functionality after deployment
-     */
-    function testBasicFunctionality() public view {
-        console.log("\n=== Testing Basic Functionality ===");
-
-        // Test AI backend authorization
-        require(
-            enhancedYieldOptimizer.authorizedAIBackends(aiBackend),
-            "AI backend should be authorized"
+    function logDeployment(
+        DeployedContracts memory contracts,
+        DeploymentConfig memory config
+    ) internal pure {
+        console.log("\n=== AI Core Components Deployment Summary ===");
+        console.log("Network:", config.networkName);
+        console.log("Admin:", config.admin);
+        console.log("");
+        console.log("Deployed Contracts:");
+        console.log(
+            "  EnhancedChainlinkFeedManager:",
+            address(contracts.enhancedFeedManager)
         );
-        console.log("AI backend authorization test passed");
-
-        // Test Enhanced ChainlinkFeedManager
-        address[] memory tokens = new address[](0);
-        // Note: This would revert in actual testing without tokens
-        // enhancedFeedManager.getMarketAnalysis(tokens);
-        console.log("Enhanced feed manager basic test passed");
-
-        // Test Enhanced YieldOptimizer parameters
-        require(
-            enhancedYieldOptimizer.maxCrossTokenSlippage() == 300,
-            "Slippage not set correctly"
+        console.log("  CCIPMessenger:", address(contracts.ccipMessenger));
+        console.log(
+            "  EnhancedYieldOptimizer:",
+            address(contracts.enhancedYieldOptimizer)
         );
-        require(
-            enhancedYieldOptimizer.minYieldImprovementBps() == 50,
-            "Yield improvement not set correctly"
+        console.log("");
+        console.log("=== AI Core Deployment Completed Successfully! ===");
+        console.log("");
+        console.log("Next Steps:");
+        console.log("1. Deploy adapters using DeployAdapters.s.sol");
+        console.log("2. Deploy vault using DeployVault.s.sol");
+        console.log("3. Configure adapters in EnhancedYieldOptimizer");
+        console.log("4. Test AI backend integration");
+        console.log("5. Configure CCIP cross-chain settings");
+        console.log("");
+        console.log("IMPORTANT: Save these addresses for other deployments:");
+        console.log(
+            "export ENHANCED_YIELD_OPTIMIZER=",
+            address(contracts.enhancedYieldOptimizer)
         );
-        require(
-            enhancedYieldOptimizer.maxTokensPerOperation() == 5,
-            "Max tokens not set correctly"
+        console.log(
+            "export ENHANCED_FEED_MANAGER=",
+            address(contracts.enhancedFeedManager)
         );
-        console.log("Enhanced yield optimizer parameters test passed");
-
-        console.log("All basic functionality tests passed!");
+        console.log("export CCIP_MESSENGER=", address(contracts.ccipMessenger));
     }
 }

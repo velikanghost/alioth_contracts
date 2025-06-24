@@ -11,24 +11,6 @@ package-lock.json
 
 .DS_Store
 src/.DS_Store
-llms.txt
-ALIOTH_SETUP_GUIDE.md
-MULTI_ASSET_VAULT_README.md
-YieldOptimizer_Functions_Guide.md
-CCIP.md
 steps_to_test.txt
 notes.txt
-portfolio_calc.md
-addresses.json
-AI_DEPLOYMENT_SUCCESS.md
-AI_INTEGRATION_README.md
-deploy.sh
-DEPLOYMENT_GUIDE.md
-improv_be.llms.txt
-improv_be.md
-improv_be.mdc
-improv_sol.llms.txt
-improv_sol.md
-testing_ai_mode.txt
-testing_comparison.txt
-testing_normal_mode.txt
+contract_focus.txt
