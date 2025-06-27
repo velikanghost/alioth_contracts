@@ -1,10 +1,7 @@
 # Alioth ⚡️ – AI-Driven Cross-Chain Yield Optimizer
 
-![Chainlink CCIP](https://img.shields.io/badge/Chainlink-CCIP-blue)
-![Foundry](https://img.shields.io/badge/Built%20With-Foundry-red)
-![Hackathon](https://img.shields.io/badge/Hackathon-Project-important)
-
-> **Alioth** is an on-chain, cross-chain yield optimiser that discovers the best APRs, routes liquidity, and rebalances positions **automatically** using Chainlink Feeds, Automation, and CCIP.
+![Chainlink Hackathon](https://img.shields.io/badge/Chainlink-Hackathon-blue)
+![Solidity](https://img.shields.io/badge/Built%20With-Solidity-orange)
 
 ---
 
@@ -73,32 +70,45 @@ alioth_contracts/src
 | **CCIPMessenger**                               | Thin wrapper around `RouterClient` that sends/receives liquidity & instructions between chains. Includes allow-lists for dest / source chains and authorised senders.      | • CCIP – token+message send / receive                                                                                                                      |
 | **Adapters** (`AaveAdapter`, `CompoundAdapter`) | Protocol-specific wrappers that normalise deposits, withdrawals, TVL, APY, health metrics.                                                                                 | —                                                                                                                                                          |
 | **DynamicAllocationLib**                        | Scoring engine that produces weighted allocations from Chainlink data + adapter stats. Integration planned post-hackathon.                                                 | • Feeds – price, APY, volatility                                                                                                                           |
-| **MockV3Aggregator** _(test only)_              | Lightweight on-chain oracle used in demos and unit tests. Can self-update its answer every `interval` seconds via Chainlink Automation.                                    | • Implements `AggregatorV3Interface` <br> • Automation – `checkUpkeep` / `performUpkeep` push new rounds                                                   |
+| **MockV3Aggregator**                            | Lightweight on-chain oracle used in demos and unit tests. Can self-update its answer every `interval` seconds via Chainlink Automation.                                    | • Implements `AggregatorV3Interface` <br> • Automation – `checkUpkeep` / `performUpkeep` push new rounds                                                   |
 
 ### End-to-End Flow
 
 1. **Deposit** → Vault pulls token, validates price & APY via FeedManager (guarding against stale or malicious AI data), then forwards funds plus the `targetProtocol` hint to the Optimizer.
 2. **Allocation** → Optimizer calls the chosen Adapter (**Aave** or **Compound**) on the selected chain.
-3. **Automation** _(test only)_ → `MockV3Aggregator` self-updates via Automation. Optimizer Upkeep is a stub until migration logic arrives in v0.2.
+3. **Automation** → `MockV3Aggregator` self-updates via Automation.
 4. **Cross-Chain** → If the chosen chain differs from the origin (Sepolia ⇄ Base-Sepolia ⇄ Fuji), Optimizer sends a CCIP message + token transfer; the destination Optimizer performs the deposit.
 
 ---
 
 ## 3️⃣ Pre-Deployed Contracts (Testnets)
 
-| Network        | Feed Manager                                 | Optimizer                                    | Vault                                        | CCIP Messenger                               |
-| -------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
-| Sepolia        | `0x471e0DC1B324c3bE18B9D6a46cDBdDD6464078A6` | `0x3499331d4c0d88028a61bf1516246C29C30AFf8E` | `0x3811F1a5481Ec93ac99d8e76A6FA6C4f6EFd39D4` | `0x86a89efA6029eFEd8b21cDC0A4760761376c2A47` |
-| Base Sepolia   | `0xfB300529C4098A956F5C2f15D7E322717097411f` | `0x9F26D100fdB2Ca6810019062B9a3C6c01Afa21e6` | `0x8BA1D001466b23F844041112E92a07e99Cb439F6` | `0xbd82c2a2AA4c5eAB8D401E0b1362CA4548C7BB45` |
-| Avalanche Fuji | `0xA4F7c5c3d3fba94Bf77C89bD41818D7662ed9dAE` | `0x2F05369A361e7F452F5e5393a565D4d1cA88F80A` | `0x5d69494cA5e2B7349B2C81F8acf63E1E15057586` | `0x9C62BFe2134C990ef373DF581487d51Eb4Efa989` |
+- **Sepolia**
 
-### Adapter Addresses
+  - FeedManager: `0x471e0DC1B324c3bE18B9D6a46cDBdDD6464078A6`
+  - Optimizer: `0x3499331d4c0d88028a61bf1516246C29C30AFf8E`
+  - Vault: `0x3811F1a5481Ec93ac99d8e76A6FA6C4f6EFd39D4`
+  - CCIP Messenger: `0x86a89efA6029eFEd8b21cDC0A4760761376c2A47`
+  - AaveAdapter: `0x2F9F0e0f3B936278983498E85cf022ce0Bb7EF2A`
+  - CompoundAdapter: `0x2745490eab4A90a82C80Db969F2Bb2A063c67Dd5`
+  - Mock Price Feed: `0xe21A8b41FC50fd43CFE52AC67790BB60509eAB88`
 
-| Network        | AaveAdapter                                  | CompoundAdapter                              | Mock Price Feed                              |
-| -------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
-| Sepolia        | `0x2F9F0e0f3B936278983498E85cf022ce0Bb7EF2A` | `0x2745490eab4A90a82C80Db969F2Bb2A063c67Dd5` | `0xe21A8b41FC50fd43CFE52AC67790BB60509eAB88` |
-| Base Sepolia   | —                                            | `0x62843F00870d99decd0F720038E35fD5114eFd43` | `0x24813C3acf475b9c8Abce1B5E34775A8448f7eD5` |
-| Avalanche Fuji | `0x5E4FfA1d7783E2465F7243D86fFC4Fe64011549B` | —                                            | `0x3C4C8B3AA7C43C6045C7bA3517583E355faDe272` |
+- **Base-Sepolia**
+
+  - FeedManager: `0xfB300529C4098A956F5C2f15D7E322717097411f`
+  - Optimizer: `0x9F26D100fdB2Ca6810019062B9a3C6c01Afa21e6`
+  - Vault: `0x8BA1D001466b23F844041112E92a07e99Cb439F6`
+  - CCIP Messenger: `0xbd82c2a2AA4c5eAB8D401E0b1362CA4548c7BB45`
+  - CompoundAdapter: `0x62843F00870d99decd0F720038E35fD5114eFd43`
+  - Mock Price Feed: `0x24813C3acf475b9c8Abce1B5E34775A8448f7eD5`
+
+- **Avalanche Fuji**
+  - FeedManager: `0xA4F7c5c3d3fba94Bf77C89bD41818D7662ed9dAE`
+  - Optimizer: `0x2F05369A361e7F452F5e5393a565D4d1cA88F80A`
+  - Vault: `0x5d69494cA5e2B7349B2C81F8acf63E1E15057586`
+  - CCIP Messenger: `0x9C62BFe2134C990ef373DF581487d51Eb4Efa989`
+  - AaveAdapter: `0x5E4FfA1d7783E2465F7243D86fFC4Fe64011549B`
+  - Mock Price Feed: `0x3C4C8B3AA7C43C6045C7bA3517583E355faDe272`
 
 ---
 
@@ -110,12 +120,12 @@ alioth_contracts/src
 #    – Node ≥18 if you want to run the AI backend later
 
 # 1. Clone + install submodules
-$ git clone https://github.com/<your-fork>/alioth_contracts.git
+$ git clone https://github.com/velikanghost/alioth_contracts
 $ cd alioth_contracts
-$ forge install           # pulls OZ, solmate, etc.
+$ forge install
 
 # 2. Run tests
-$ forge test -vv          # ≈400 smart-contract tests
+$ forge test -vv
 
 # 3. Deploy core to anvil
 $ forge script script/DeployCore.s.sol --fork-url http://localhost:8545 --broadcast
@@ -174,23 +184,25 @@ cast send $VAULT "withdraw(address,uint256,uint256,string)" \
   --rpc-url $BASE_RPC --account $PK
 ```
 
-For cross-chain tests, use the _allow-list_ commands shown earlier, then call `initiateCrossChainRebalance` from the Optimizer.
-
 ---
 
 ## 6️⃣ Project Roadmap
 
-| Phase               | Features                                                                                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **MVP (hackathon)** | Single-protocol deposit, APY-based rebalancing stub, CCIP scaffolding                                                                                  |
-| **Post-hackathon**  | 🔜 Integrate `DynamicAllocationLib` for weighted splits <br> 🔜 Full on-chain liquidity migration <br> 🔜 Front-end dashboard & AI backend open-source |
+1. **Token-Agnostic Deposits**
+
+   - Swap any ERC-20 into the vault's supported assets via on-chain DEX before allocation.
+   - Integrate slippage & price-impact checks using Chainlink Functions.
+
+2. **Dynamic Allocation Engine**
+
+   - Wire `DynamicAllocationLib` into Optimizer for multi-protocol splits.
+   - Add risk-profile presets (conservative, balanced, aggressive).
+
+3. **Automated Cross-Chain Rebalancing**
+
+   - Enable liquidity migration when better yields emerge on another chain.
+   - Fully on-chain, triggered by Chainlink Automation.
 
 ---
 
-## 7️⃣ Contributing / Questions
-
-Pull Requests are welcome! For issues reach out in the **Alioth** Discord channel.
-
----
-
-<p align="center">Made with ❤️  for Chainlink ✦ Monad ✦ ETHGlobal</p>
+<p align="center">Built with ❤️ by the Alioth core team</p>
