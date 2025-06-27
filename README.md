@@ -1,433 +1,194 @@
-# Alioth Smart Contracts
+# Alioth ⚡️ – AI-Driven Cross-Chain Yield Optimizer
 
-Alioth is an AI-driven multi-asset yield optimization platform that provides automated yield farming across multiple DeFi protocols. The smart contracts enable users to deposit various ERC20 tokens and receive optimized yield through intelligent protocol selection.
+![Chainlink CCIP](https://img.shields.io/badge/Chainlink-CCIP-blue)
+![Foundry](https://img.shields.io/badge/Built%20With-Foundry-red)
+![Hackathon](https://img.shields.io/badge/Hackathon-Project-important)
 
-## 🏗️ Architecture Overview
+> **Alioth** is an on-chain, cross-chain yield optimiser that discovers the best APRs, routes liquidity, and rebalances positions **automatically** using Chainlink Feeds, Automation, and CCIP.
 
-### Core Components
+---
 
-1. **Multi-Asset Vault**: Supports deposits of multiple ERC20 tokens (USDC, DAI, LINK, WETH, etc.)
-2. **Receipt Token System**: Issues tradeable receipt tokens (atUSDC, atDAI, etc.) representing user shares
-3. **Enhanced Yield Optimizer**: AI-driven protocol selection and automated rebalancing
-4. **Protocol Adapters**: Uniform interfaces for DeFi protocol integration (Aave, Compound, Yearn)
-5. **Cross-Chain Infrastructure**: Chainlink CCIP for cross-chain yield optimization
-6. **AI Agent Integration**: Role-based access for automated operations
+## 🚩 Problem Statement
 
-### Key Features
+Today's yield strategies are siloed per chain and rely on unverified off-chain signals. Users face:
 
-- **Multi-Asset Support**: Deposit any supported ERC20 token and earn optimized yield
-- **Receipt Tokens**: Get tradeable ERC20 tokens (atUSDC, atDAI) representing your vault shares
-- **AI-Driven Protocol Selection**: Automatically selects best yield protocols for each token
-- **Automated Rebalancing**: Moves funds between protocols when better yields are available
-- **Cross-Chain Operations**: Leverage Chainlink CCIP for cross-chain yield opportunities
-- **Chainlink Integration**: Uses Chainlink feeds for price validation and APY tracking
-- **Emergency Circuit Breakers**: Multi-layered security with emergency stops
+1. **Fragmented Liquidity** – Attractive APRs move across chains (and between Aave ⇄ Compound), forcing manual bridging.
+2. **Data Integrity Risks** – Bots can feed falsified rates to naïve contracts, leading to mis-allocations or losses.
+3. **Cumbersome UX** – Depositing into multiple protocols on multiple chains requires a dozen approvals and UI hops.
 
-## 📁 Contract Structure
+---
 
-```
-src/
-├── interfaces/           # Contract interfaces
-│   ├── IProtocolAdapter.sol
-│   ├── IEnhancedYieldOptimizer.sol
-│   └── ICCIPMessenger.sol
-├── libraries/           # Shared libraries
-│   ├── ValidationLib.sol
-│   ├── MathLib.sol
-│   └── DynamicAllocationLib.sol
-├── core/               # Core contracts
-│   ├── EnhancedYieldOptimizer.sol
-│   ├── EnhancedChainlinkFeedManager.sol
-│   └── CCIPMessenger.sol
-├── vaults/             # Vault contracts
-│   └── AliothVault.sol
-├── tokens/             # Token contracts
-│   └── AliothReceiptToken.sol
-├── factories/          # Factory contracts
-│   └── ReceiptTokenFactory.sol
-├── adapters/           # Protocol adapters
-│   ├── AaveAdapter.sol
-│   └── CompoundAdapter.sol
-└── script/             # Deployment scripts
-    ├── DeployVault.s.sol
-    ├── DeployAdapters.s.sol
-    └── DeployAIIntegration.s.sol
-```
+## 🟢 Solution Overview (Alioth v0.1)
 
-## 🔧 Core Contracts
+Alioth tackles those points with an all-on-chain approach:
 
-### AliothVault
+• **Cross-Chain Deposits (Live)** – Users deposit once and Alioth bridges to Sepolia, Base-Sepolia, or Avalanche Fuji behind the scenes.
+• **Protocol Abstraction (Live)** – Uniform adapters for **Aave** and **Compound** mean one API for both.
+• **Chainlink-Verified Recommendations (Live)** – Every AI suggestion is validated on-chain via fresh price + APY feeds.
+• **Automation for Test Feeds (Live)** – `MockV3Aggregator` uses Chainlink Automation to self-update during demos.
+• **Automated Rebalancing (Planned)** – Optimizer contains Upkeep stubs; on-chain liquidity moves will ship in v0.2.
 
-The main multi-asset vault that handles user deposits and issues receipt tokens.
+---
 
-**Key Functions:**
+## 1️⃣ Why Alioth?
 
-- `deposit(token, amount, minShares, targetProtocol)`: Deposit any supported token
-- `withdraw(token, shares, minAmount, targetProtocol)`: Withdraw by burning receipt tokens
-- `addToken(token, symbol, minDeposit, maxDeposit)`: Add support for new tokens
-- `getUserPortfolio(user)`: Get comprehensive portfolio information
+Current yield aggregators are usually locked to a single chain, rely on off-chain cron jobs, and make naïve rebalancing decisions. Alioth solves these issues by combining:
 
-**Receipt Token System:**
+1. **On-Chain Portfolio Logic** – Solidity contracts that hold assets and talk to protocol adapters (Aave, Compound, …).
+2. **Chainlink Feeds & Automation** – Reliable APY / price data and keeper-style jobs that trigger rebalances.
+3. **Chainlink CCIP** – Trust-minimised cross-chain messaging & token transfers so the optimiser can chase yields on any supported network.
+4. **Optional AI Agent (off-chain)** – _not required for judging;_ all critical portfolio logic lives **on-chain**. No backend setup is necessary for the demo.
 
-- Automatic creation of receipt tokens (atUSDC, atDAI, etc.)
-- ERC20 tokens visible in user wallets
-- Tradeable and transferable
-- Represent proportional shares in yield strategies
+---
 
-### EnhancedYieldOptimizer
+## 2️⃣ Contract Overview
 
-The AI-driven yield optimization engine that manages protocol allocation.
-
-**Key Functions:**
-
-- `executeSingleOptimizedDeposit()`: Execute optimized deposits with AI protocol selection
-- `executeWithdrawal()`: Handle withdrawals from specific protocols
-- `automatedRebalance()`: AI-triggered rebalancing between protocols
-- `addProtocol()`: Add new protocol adapters
-
-**AI Integration:**
-
-- Chainlink Automation for automated rebalancing
-- Role-based access for AI agents (`REBALANCER_ROLE`, `AUTHORIZED_VAULT_ROLE`)
-- Real-time APY monitoring and protocol comparison
-- Validation using Chainlink price feeds
-
-### EnhancedChainlinkFeedManager
-
-Manages Chainlink price feeds and market data for yield optimization.
-
-**Key Functions:**
-
-- `setTokenFeeds()`: Configure price, rate, and volatility feeds for tokens
-- `getMarketAnalysis()`: Get comprehensive market analysis for supported tokens
-- `validateTokenPrice()`: Validate token prices against Chainlink feeds
-- `getProtocolAPY()`: Get current APY data for protocols
-
-### CCIPMessenger
-
-Handles secure cross-chain communication using Chainlink CCIP.
-
-**Key Functions:**
-
-- `sendMessage()`: Send cross-chain messages with optional token transfers
-- `sendYieldRebalance()`: Trigger rebalancing on other chains
-- `allowlistChain()`: Configure supported destination chains
-- `allowlistSender()`: Configure trusted cross-chain senders
-
-## 🔌 Protocol Integration
-
-### IProtocolAdapter Interface
-
-All protocol integrations implement the standardized `IProtocolAdapter` interface:
-
-```solidity
-interface IProtocolAdapter {
-    function protocolName() external view returns (string memory);
-    function getAPY(address token) external view returns (uint256);
-    function getTVL(address token) external view returns (uint256);
-    function deposit(address token, uint256 amount, uint256 minShares) external payable returns (uint256);
-    function withdraw(address token, uint256 shares, uint256 minAmount) external returns (uint256);
-    function harvestYield(address token) external returns (uint256);
-}
+```text
+alioth_contracts/src
+├── core
+│   ├── AliothYieldOptimizer.sol   # Main orchestrator
+│   ├── AliothVault.sol            # ERC-4626-style vault wrapper
+│   ├── CCIPMessenger.sol          # Cross-chain router (CCIP)
+│   └── ChainlinkFeedManager.sol   # Manages price / APY / vol feeds
+├── adapters
+│   ├── AaveAdapter.sol            # Talks to Aave v3 markets
+│   └── CompoundAdapter.sol        # Talks to Compound v3
+├── libraries
+│   ├── DynamicAllocationLib.sol   # (WIP) multi-factor optimiser
+│   ├── MathLib.sol                # Fixed-point helpers
+│   └── ValidationLib.sol          # Common require helpers
+└── factories
+    └── ReceiptTokenFactory.sol    # Minimal-proxy receipt tokens
 ```
 
-### Supported Protocols
+### Core Contracts in Detail
 
-- **Aave**: Lending protocol adapter (`AaveAdapter.sol`)
-- **Compound**: Money market protocol adapter (`CompoundAdapter.sol`)
-- **Yearn Finance**: (Planned)
-- **Convex**: (Planned)
+| Contract                                        | Purpose                                                                                                                                                                    | Key Chainlink Usage                                                                                                                                        |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AliothYieldOptimizer**                        | Central brain that holds assets, tracks supported adapters, and decides where funds should go. Handles deposits/withdrawals, maintains APY cache, and executes rebalances. | • Feeds – `getBestProtocolAPY` <br> • Automation – `checkUpkeep` / `performUpkeep` <br> • (WIP) Will call `DynamicAllocationLib` for multi-protocol splits |
+| **AliothVault** (ERC-4626)                      | User-facing wrapper that tokenises positions (mints `AliothReceiptToken`). Delegates capital to the Optimizer and enforces slippage checks.                                | • Feeds – price validation on deposits/withdrawals                                                                                                         |
+| **ChainlinkFeedManager**                        | Aggregator & registrar for price / APY / volatility feeds. Caches projections for gas efficiency.                                                                          | • Feeds – direct calls to `AggregatorV3Interface`                                                                                                          |
+| **CCIPMessenger**                               | Thin wrapper around `RouterClient` that sends/receives liquidity & instructions between chains. Includes allow-lists for dest / source chains and authorised senders.      | • CCIP – token+message send / receive                                                                                                                      |
+| **Adapters** (`AaveAdapter`, `CompoundAdapter`) | Protocol-specific wrappers that normalise deposits, withdrawals, TVL, APY, health metrics.                                                                                 | —                                                                                                                                                          |
+| **DynamicAllocationLib**                        | Scoring engine that produces weighted allocations from Chainlink data + adapter stats. Integration planned post-hackathon.                                                 | • Feeds – price, APY, volatility                                                                                                                           |
 
-## 🪙 Receipt Token System
+### End-to-End Flow
 
-### How It Works
+1. **Deposit** → Vault pulls token, validates price & APY via FeedManager (guarding against stale or malicious AI data), then forwards funds plus the `targetProtocol` hint to the Optimizer.
+2. **Allocation** → Optimizer calls the chosen Adapter (**Aave** or **Compound**) on the selected chain.
+3. **Automation** _(test only)_ → `MockV3Aggregator` self-updates via Automation. Optimizer Upkeep is a stub until migration logic arrives in v0.2.
+4. **Cross-Chain** → If the chosen chain differs from the origin (Sepolia ⇄ Base-Sepolia ⇄ Fuji), Optimizer sends a CCIP message + token transfer; the destination Optimizer performs the deposit.
 
-1. **Deposit**: User deposits USDC → receives atUSDC receipt tokens
-2. **Yield Earning**: atUSDC represents share in USDC yield strategy
-3. **Withdrawal**: User burns atUSDC → receives USDC + earned yield
-4. **Transferable**: atUSDC can be traded, transferred, or used in other protocols
+---
 
-### Supported Tokens & Receipt Tokens
+## 3️⃣ Pre-Deployed Contracts (Testnets)
 
-| Token | Receipt Token | Symbol |
-| ----- | ------------- | ------ |
-| USDC  | Alioth USDC   | atUSDC |
-| DAI   | Alioth DAI    | atDAI  |
-| LINK  | Alioth LINK   | atLINK |
-| WETH  | Alioth WETH   | atWETH |
-| WBTC  | Alioth WBTC   | atWBTC |
+| Network        | Feed Manager | Optimizer   | Vault       | CCIP Messenger |
+| -------------- | ------------ | ----------- | ----------- | -------------- |
+| Sepolia        | `0x471e0D…`  | `0x349933…` | `0x3811F1…` | `0x86a89e…`    |
+| Base Sepolia   | `0xfB3005…`  | `0x9F26D1…` | `0x8BA1D0…` | `0xbd82c2…`    |
+| Avalanche Fuji | `0xA4F7c5…`  | `0x2F0536…` | `0x5d6949…` | `0x9C62BF…`    |
 
-## 🤖 AI Agent Integration
+Adapters & feed addresses for LINK / WBTC / ETH are listed in [`notes.txt`](notes.txt).
 
-### Role-Based Access Control
+---
 
-The contracts implement role-based access control for AI agents:
-
-```solidity
-// Enhanced Yield Optimizer Roles
-bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
-bytes32 public constant HARVESTER_ROLE = keccak256("HARVESTER_ROLE");
-bytes32 public constant AUTHORIZED_VAULT_ROLE = keccak256("AUTHORIZED_VAULT_ROLE");
-
-// Cross-Chain Roles
-bytes32 public constant SENDER_ROLE = keccak256("SENDER_ROLE");
-bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
-```
-
-### AI Agent Functions
-
-**Yield Optimization Agent:**
-
-- Monitors APRs across protocols for each token
-- Triggers rebalancing when profitable opportunities arise
-- Selects optimal protocols for new deposits
-- Validates operations using Chainlink feeds
-
-**Cross-Chain Coordinator:**
-
-- Monitors yield opportunities across different chains
-- Triggers cross-chain rebalancing via CCIP
-- Manages cross-chain asset allocation
-- Handles emergency cross-chain operations
-
-## 🔄 User Flow Example
-
-1. **User deposits 1000 USDC** to AliothVault
-2. **AI analyzes** current yields: Aave USDC (4.2%), Compound USDC (4.8%)
-3. **Vault selects** Compound for better yield
-4. **User receives** atUSDC receipt tokens representing their share
-5. **AI monitors** continuously and rebalances if better yields emerge
-6. **User withdraws** anytime by burning atUSDC for USDC + earned yield
-
-## 🛡️ Security Features
-
-### Access Control
-
-- Multi-signature requirements for admin functions
-- Role-based access for different operations
-- Timelock mechanisms for critical parameter updates
-
-### Safety Mechanisms
-
-- Emergency stop functionality across all contracts
-- Reentrancy guards on all external functions
-- Slippage protection for all trades
-- Oracle staleness checks
-
-### Validation
-
-- Comprehensive input validation using `ValidationLib`
-- Custom errors for gas efficiency
-- Range checks for all parameters
-
-## 🚀 Deployment
-
-### Prerequisites
-
-1. Install Foundry:
+## 4️⃣ Quick Start (Local)
 
 ```bash
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
+# 0. Prerequisites
+#    – Foundry (https://book.getfoundry.sh/)
+#    – Node ≥18 if you want to run the AI backend later
+
+# 1. Clone + install submodules
+$ git clone https://github.com/<your-fork>/alioth_contracts.git
+$ cd alioth_contracts
+$ forge install           # pulls OZ, solmate, etc.
+
+# 2. Run tests
+$ forge test -vv          # ≈400 smart-contract tests
+
+# 3. Deploy core to anvil
+$ forge script script/DeployCore.s.sol --fork-url http://localhost:8545 --broadcast
 ```
 
-2. Install dependencies:
+_Tip:_ all deploy scripts accept `--rpc-url` & `--private-key` so you can broadcast to public testnets.
 
-```bash
-forge install
-```
+---
 
-3. Set environment variables:
+## 5️⃣ Mandatory End-to-End Demo (Single & Cross-Chain)
 
-```bash
-export ADMIN_ADDRESS=0x...
-export SEPOLIA_RPC_URL=https://...
-export PRIVATE_KEY=0x...
-```
+1. **Add LINK feeds & adapter support (Sepolia)**
 
-### Deploy to Sepolia Testnet
+   ```bash
+   # 1A. Register LINK price feed
+   cast send $FEED_MANAGER "setTokenFeeds(address,address,address,address)" \
+       $LINK  $LINK_USD_FEED  0x000…0  0x000…0  --rpc-url $RPC  --account $PK
 
-1. **Deploy Enhanced Yield Optimizer and dependencies:**
+   # 1B. Register LINK in AaveAdapter
+   cast send $AAVE_ADAPTER "addSupportedToken(address,address)" \
+       $LINK  $LINK_ATOKEN --rpc-url $RPC --account $PK
+   ```
 
-```bash
-forge script script/DeployAIIntegration.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify
-```
+2. **Add the adapter to the optimizer**
 
-2. **Deploy Protocol Adapters:**
+   ```bash
+   cast send $OPTIMIZER "addProtocol(address)" $AAVE_ADAPTER --rpc-url $RPC --account $PK
+   ```
 
-```bash
-forge script script/DeployAdapters.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify
-```
+3. **Verify setup**
 
-3. **Deploy Multi-Asset Vault:**
+   ```bash
+   cast call $FEED_MANAGER  "isSupportedToken(address)(bool)"  $LINK  --rpc-url $RPC
+   cast call $AAVE_ADAPTER  "supportsToken(address)(bool)"     $LINK  --rpc-url $RPC
+   cast call $OPTIMIZER     "isChainlinkAllocationEnabled(address)(bool)" $LINK --rpc-url $RPC
+   ```
 
-```bash
-forge script script/DeployVault.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify
-```
+4. **Run the dry-run allocation**
 
-### Deployed Contracts (Sepolia)
+   ```bash
+   cast call $OPTIMIZER "calculateOptimalAllocation(address,uint256)(uint256)" \
+       $LINK  1000000000000000000 --rpc-url $RPC
+   # should return non-zero APY value
+   ```
 
-```
-EnhancedYieldOptimizer: 0xDeE85d65aaDaff8e10164e05e0a8d2AD871e8db0
-AliothVault: 0xFBC065B72f312Ad41676B977E01aBd9cf86CeF1A
-ReceiptTokenFactory: 0xa224d911E2888b2e92188C6586879E18d50c1404
-AaveAdapter: 0x806A4f611061b80d7422Ef4Cc108c0e1c7090A05
-CompoundAdapter: 0xb33FacE783e024843964A2Dc7fcb32F77E7D4d03
-```
+5. **Deposit through the vault**
 
-## 🔗 Chain Support
+   ```bash
+   cast send $LINK "approve(address,uint256)" $VAULT 1000000000000000000 --rpc-url $RPC --account $PK
+   cast send $VAULT "deposit(address,uint256,uint256)" $LINK 1000000000000000000 0 --rpc-url $RPC --account $PK
+   ```
 
-### Supported Networks
+6. **Cross-Chain Rebalance** – allow-list _destination_ and _source_ chains, then trigger a cross-chain message:
 
-- **Ethereum Sepolia**: Primary testnet deployment
-- **Arbitrum Sepolia**: Lower gas costs for frequent operations
-- **Base Sepolia**: (Planned)
-- **Avalanche Fuji**: (Planned)
+   ```bash
+   # On origin chain
+   cast send $CCIP_MESSENGER "allowlistDestinationChain(uint64,address,uint256)" \
+       $DST_SELECTOR $DST_ROUTER 500000 --rpc-url $RPC --account $PK
+   # On dest chain
+   cast send $CCIP_MESSENGER "allowlistSourceChain(uint64,bool)" $SRC_SELECTOR true --rpc-url $DST_RPC --account $PK
 
-### Supported Tokens (Sepolia)
+   # Trigger the cross-chain rebalance (example moves 1 LINK to Base-Sepolia Optimizer)
+   cast send $ORIGIN_OPTIMIZER "initiateCrossChainRebalance(uint64,address,address,uint256,address)" \
+       $DST_SELECTOR $DEST_OPTIMIZER $LINK 1000000000000000000 $AAVE_ADAPTER \
+       --rpc-url $RPC --account $PK
+   ```
 
-- **LINK**: 0xf8Fb3713D459D7C1018BD0A49D19b4C44290EBE5
-- **WBTC**: 0x29f2D40B0605204364af54EC677bD022dA425d03
-- **WETH**: 0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c
+---
 
-### Cross-Chain Configuration
+## 6️⃣ Project Roadmap
 
-Each deployment supports cross-chain operations via Chainlink CCIP:
+| Phase               | Features                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **MVP (hackathon)** | Single-protocol deposit, APY-based rebalancing stub, CCIP scaffolding                                                                                  |
+| **Post-hackathon**  | 🔜 Integrate `DynamicAllocationLib` for weighted splits <br> 🔜 Full on-chain liquidity migration <br> 🔜 Front-end dashboard & AI backend open-source |
 
-```solidity
-// Chain Selectors (Testnet)
-uint64 constant SEPOLIA_SELECTOR = 16015286601757825753;
-uint64 constant ARBITRUM_SEPOLIA_SELECTOR = 3478487238524512106;
-uint64 constant BASE_SEPOLIA_SELECTOR = 10344971235874465080;
-```
+---
 
-## 📊 Key Metrics & KPIs
+## 7️⃣ Contributing / Questions
 
-- **TVL Target**: $1M+ on testnet
-- **APY Performance**: Beat individual protocol yields
-- **Agent Uptime**: 99.9%
-- **Cross-chain Success Rate**: >98%
-- **Receipt Token Adoption**: Tradeable and transferable
+Pull Requests are welcome! For issues reach out in the **Alioth** Discord channel.
 
-## 🧪 Testing
+---
 
-Run the test suite:
-
-```bash
-forge test
-```
-
-Run tests with gas reporting:
-
-```bash
-forge test --gas-report
-```
-
-Run specific test files:
-
-```bash
-forge test --match-path test/unit/
-forge test --match-path test/integration/
-```
-
-## 📚 Integration Examples
-
-### Frontend Integration
-
-```typescript
-import { AliothVault__factory, AliothReceiptToken__factory } from './types'
-
-const vault = AliothVault__factory.connect(vaultAddress, signer)
-
-// Deposit USDC and receive atUSDC receipt tokens
-const tx = await vault.deposit(
-  usdcAddress,
-  ethers.parseUnits('1000', 6), // 1000 USDC
-  ethers.parseUnits('990', 6), // Min 990 atUSDC (1% slippage)
-  'aave', // Target protocol
-)
-
-// Check user's atUSDC balance
-const receiptToken = AliothReceiptToken__factory.connect(atUsdcAddress, signer)
-const balance = await receiptToken.balanceOf(userAddress)
-```
-
-### Backend AI Integration
-
-```typescript
-// Monitor rebalancing opportunities across protocols
-const aaveAPY = await enhancedYieldOptimizer.getProtocolAPY(0, usdcAddress) // AAVE
-const compoundAPY = await enhancedYieldOptimizer.getProtocolAPY(1, usdcAddress) // COMPOUND
-
-if (compoundAPY > aaveAPY + rebalanceThreshold) {
-  // Trigger AI agent rebalancing
-  await enhancedYieldOptimizer.automatedRebalance(
-    optimizationId,
-    compoundAPY,
-    Date.now(),
-  )
-}
-```
-
-### Portfolio Management
-
-```typescript
-// Get user's complete portfolio across all tokens
-const portfolio = await vault.getUserPortfolio(userAddress)
-
-console.log('User Portfolio:')
-for (let i = 0; i < portfolio.tokens.length; i++) {
-  console.log(`${portfolio.symbols[i]}: ${portfolio.shares[i]} shares`)
-  console.log(`Receipt Token: ${portfolio.receiptTokens[i]}`)
-  console.log(`Current Value: ${portfolio.values[i]}`)
-}
-```
-
-## 🏛️ Governance & Upgrades
-
-### Parameter Updates
-
-Critical parameters can be updated through admin functions:
-
-- Rebalance intervals and thresholds
-- Protocol adapter weights and priorities
-- Fee rates and slippage tolerances
-- Token support and minimum deposits
-
-### Emergency Procedures
-
-1. **Emergency Stop**: Immediate halt of all vault operations
-2. **Protocol Pause**: Disable specific protocol integrations
-3. **Fund Recovery**: Emergency withdrawal capabilities
-4. **Parameter Freeze**: Lock parameter updates during incidents
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-### Development Guidelines
-
-- Follow Alioth smart contract development rules
-- Use Foundry for testing and deployment
-- Implement proper access controls
-- Add comprehensive NatSpec documentation
-- Test on testnets before mainnet deployment
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔗 Links
-
-- **Documentation**: [docs.alioth.finance](https://docs.alioth.finance)
-- **Website**: [alioth.finance](https://alioth.finance)
-- **Discord**: [discord.gg/alioth](https://discord.gg/alioth)
-- **Twitter**: [@AliothFinance](https://twitter.com/AliothFinance)
-
-## ⚠️ Disclaimer
-
-This software is experimental and unaudited. Use at your own risk. The Alioth protocol is under active development and contracts may change without notice. Receipt tokens represent shares in yield strategies and their value may fluctuate based on underlying protocol performance.
+<p align="center">Made with ❤️  for Chainlink ✦ Monad ✦ ETHGlobal</p>
