@@ -83,13 +83,19 @@ alioth_contracts/src
 
 ## 3️⃣ Pre-Deployed Contracts (Testnets)
 
-| Network        | Feed Manager | Optimizer   | Vault       | CCIP Messenger |
-| -------------- | ------------ | ----------- | ----------- | -------------- |
-| Sepolia        | `0x471e0D…`  | `0x349933…` | `0x3811F1…` | `0x86a89e…`    |
-| Base Sepolia   | `0xfB3005…`  | `0x9F26D1…` | `0x8BA1D0…` | `0xbd82c2…`    |
-| Avalanche Fuji | `0xA4F7c5…`  | `0x2F0536…` | `0x5d6949…` | `0x9C62BF…`    |
+| Network        | Feed Manager                                 | Optimizer                                    | Vault                                        | CCIP Messenger                               |
+| -------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Sepolia        | `0x471e0DC1B324c3bE18B9D6a46cDBdDD6464078A6` | `0x3499331d4c0d88028a61bf1516246C29C30AFf8E` | `0x3811F1a5481Ec93ac99d8e76A6FA6C4f6EFd39D4` | `0x86a89efA6029eFEd8b21cDC0A4760761376c2A47` |
+| Base Sepolia   | `0xfB300529C4098A956F5C2f15D7E322717097411f` | `0x9F26D100fdB2Ca6810019062B9a3C6c01Afa21e6` | `0x8BA1D001466b23F844041112E92a07e99Cb439F6` | `0xbd82c2a2AA4c5eAB8D401E0b1362CA4548C7BB45` |
+| Avalanche Fuji | `0xA4F7c5c3d3fba94Bf77C89bD41818D7662ed9dAE` | `0x2F05369A361e7F452F5e5393a565D4d1cA88F80A` | `0x5d69494cA5e2B7349B2C81F8acf63E1E15057586` | `0x9C62BFe2134C990ef373DF581487d51Eb4Efa989` |
 
-Adapters & feed addresses for LINK / WBTC / ETH are listed in [`notes.txt`](notes.txt).
+### Adapter Addresses
+
+| Network        | AaveAdapter                                  | CompoundAdapter                              | Mock Price Feed                              |
+| -------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Sepolia        | `0x2F9F0e0f3B936278983498E85cf022ce0Bb7EF2A` | `0x2745490eab4A90a82C80Db969F2Bb2A063c67Dd5` | `0xe21A8b41FC50fd43CFE52AC67790BB60509eAB88` |
+| Base Sepolia   | —                                            | `0x62843F00870d99decd0F720038E35fD5114eFd43` | `0x24813C3acf475b9c8Abce1B5E34775A8448f7eD5` |
+| Avalanche Fuji | `0x5E4FfA1d7783E2465F7243D86fFC4Fe64011549B` | —                                            | `0x3C4C8B3AA7C43C6045C7bA3517583E355faDe272` |
 
 ---
 
@@ -116,63 +122,56 @@ _Tip:_ all deploy scripts accept `--rpc-url` & `--private-key` so you can broadc
 
 ---
 
-## 5️⃣ Mandatory End-to-End Demo (Single & Cross-Chain)
+## 5️⃣ Testing
 
-1. **Add LINK feeds & adapter support (Sepolia)**
+Below are the core Vault functions. They are fully network-agnostic—just point `$RPC` and contract addresses at Sepolia, Base-Sepolia, or Avalanche Fuji.
 
-   ```bash
-   # 1A. Register LINK price feed
-   cast send $FEED_MANAGER "setTokenFeeds(address,address,address,address)" \
-       $LINK  $LINK_USD_FEED  0x000…0  0x000…0  --rpc-url $RPC  --account $PK
+### Solidity Signatures
 
-   # 1B. Register LINK in AaveAdapter
-   cast send $AAVE_ADAPTER "addSupportedToken(address,address)" \
-       $LINK  $LINK_ATOKEN --rpc-url $RPC --account $PK
-   ```
+```solidity
+/**
+ * Deposit tokens and let the optimiser choose where to earn yield.
+ * - token: ERC-20 address (e.g. LINK)
+ * - amount: deposit size
+ * - minShares: slippage guard (can be 0 for tests)
+ * - targetProtocol: "aave" | "compound" (AI recommendation)
+ */
+function deposit(
+    address token,
+    uint256 amount,
+    uint256 minShares,
+    string calldata targetProtocol
+) external nonReentrant returns (uint256 shares);
 
-2. **Add the adapter to the optimizer**
+/**
+ * Burn receipt tokens and receive the underlying asset back.
+ */
+function withdraw(
+    address token,
+    uint256 shares,
+    uint256 minAmount,
+    string calldata targetProtocol
+) external nonReentrant returns (uint256 amount);
+```
 
-   ```bash
-   cast send $OPTIMIZER "addProtocol(address)" $AAVE_ADAPTER --rpc-url $RPC --account $PK
-   ```
+### Quick Cast Examples
 
-3. **Verify setup**
+```bash
+# Approve Vault and deposit 1 LINK into Aave on Sepolia
+cast send $LINK "approve(address,uint256)" $VAULT 1000000000000000000 \
+  --rpc-url $RPC --account $PK
 
-   ```bash
-   cast call $FEED_MANAGER  "isSupportedToken(address)(bool)"  $LINK  --rpc-url $RPC
-   cast call $AAVE_ADAPTER  "supportsToken(address)(bool)"     $LINK  --rpc-url $RPC
-   cast call $OPTIMIZER     "isChainlinkAllocationEnabled(address)(bool)" $LINK --rpc-url $RPC
-   ```
+cast send $VAULT "deposit(address,uint256,uint256,string)" \
+  $LINK 1000000000000000000 0 "aave" \
+  --rpc-url $RPC --account $PK
 
-4. **Run the dry-run allocation**
+# Withdraw all shares back from Compound on Base-Sepolia
+cast send $VAULT "withdraw(address,uint256,uint256,string)" \
+  $LINK $MY_SHARES 0 "compound" \
+  --rpc-url $BASE_RPC --account $PK
+```
 
-   ```bash
-   cast call $OPTIMIZER "calculateOptimalAllocation(address,uint256)(uint256)" \
-       $LINK  1000000000000000000 --rpc-url $RPC
-   # should return non-zero APY value
-   ```
-
-5. **Deposit through the vault**
-
-   ```bash
-   cast send $LINK "approve(address,uint256)" $VAULT 1000000000000000000 --rpc-url $RPC --account $PK
-   cast send $VAULT "deposit(address,uint256,uint256)" $LINK 1000000000000000000 0 --rpc-url $RPC --account $PK
-   ```
-
-6. **Cross-Chain Rebalance** – allow-list _destination_ and _source_ chains, then trigger a cross-chain message:
-
-   ```bash
-   # On origin chain
-   cast send $CCIP_MESSENGER "allowlistDestinationChain(uint64,address,uint256)" \
-       $DST_SELECTOR $DST_ROUTER 500000 --rpc-url $RPC --account $PK
-   # On dest chain
-   cast send $CCIP_MESSENGER "allowlistSourceChain(uint64,bool)" $SRC_SELECTOR true --rpc-url $DST_RPC --account $PK
-
-   # Trigger the cross-chain rebalance (example moves 1 LINK to Base-Sepolia Optimizer)
-   cast send $ORIGIN_OPTIMIZER "initiateCrossChainRebalance(uint64,address,address,uint256,address)" \
-       $DST_SELECTOR $DEST_OPTIMIZER $LINK 1000000000000000000 $AAVE_ADAPTER \
-       --rpc-url $RPC --account $PK
-   ```
+For cross-chain tests, use the _allow-list_ commands shown earlier, then call `initiateCrossChainRebalance` from the Optimizer.
 
 ---
 
