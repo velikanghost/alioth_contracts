@@ -18,7 +18,7 @@ Today's yield strategies are siloed per chain and rely on unverified off-chain s
 
 ---
 
-## 🟢 Solution Overview (Alioth v0.1)
+## 🟢 Solution
 
 Alioth tackles those points with an all-on-chain approach:
 
@@ -57,6 +57,8 @@ alioth_contracts/src
 │   ├── DynamicAllocationLib.sol   # (WIP) multi-factor optimiser
 │   ├── MathLib.sol                # Fixed-point helpers
 │   └── ValidationLib.sol          # Common require helpers
+├── mocks
+│   └── MockV3Aggregator.sol       # Test oracle with Automation
 └── factories
     └── ReceiptTokenFactory.sol    # Minimal-proxy receipt tokens
 ```
@@ -71,6 +73,7 @@ alioth_contracts/src
 | **CCIPMessenger**                               | Thin wrapper around `RouterClient` that sends/receives liquidity & instructions between chains. Includes allow-lists for dest / source chains and authorised senders.      | • CCIP – token+message send / receive                                                                                                                      |
 | **Adapters** (`AaveAdapter`, `CompoundAdapter`) | Protocol-specific wrappers that normalise deposits, withdrawals, TVL, APY, health metrics.                                                                                 | —                                                                                                                                                          |
 | **DynamicAllocationLib**                        | Scoring engine that produces weighted allocations from Chainlink data + adapter stats. Integration planned post-hackathon.                                                 | • Feeds – price, APY, volatility                                                                                                                           |
+| **MockV3Aggregator** _(test only)_              | Lightweight on-chain oracle used in demos and unit tests. Can self-update its answer every `interval` seconds via Chainlink Automation.                                    | • Implements `AggregatorV3Interface` <br> • Automation – `checkUpkeep` / `performUpkeep` push new rounds                                                   |
 
 ### End-to-End Flow
 
