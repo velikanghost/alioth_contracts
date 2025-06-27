@@ -202,7 +202,7 @@ contract CCIPMessenger is
         uint64 destinationChain,
         address receiver,
         MessageType messageType,
-        bytes calldata data,
+        bytes memory data,
         address token,
         uint256 amount,
         PayFeesIn payFeesIn
@@ -217,6 +217,30 @@ contract CCIPMessenger is
         whenNotPaused
         returns (bytes32 messageId)
     {
+        return
+            _sendMessage(
+                destinationChain,
+                receiver,
+                messageType,
+                data,
+                token,
+                amount,
+                payFeesIn
+            );
+    }
+
+    /**
+     * @notice Internal function to send a cross-chain message
+     */
+    function _sendMessage(
+        uint64 destinationChain,
+        address receiver,
+        MessageType messageType,
+        bytes memory data,
+        address token,
+        uint256 amount,
+        PayFeesIn payFeesIn
+    ) internal returns (bytes32 messageId) {
         receiver.validateAddress();
 
         // Build CCIP message
@@ -308,11 +332,21 @@ contract CCIPMessenger is
         uint256 amount,
         address targetProtocol,
         PayFeesIn payFeesIn
-    ) external payable override returns (bytes32 messageId) {
+    )
+        external
+        payable
+        override
+        onlyAllowlistedSender
+        onlyAllowlistedChain(destinationChain)
+        onlyEnabledMessageType(MessageType.YIELD_REBALANCE)
+        nonReentrant
+        whenNotPaused
+        returns (bytes32 messageId)
+    {
         bytes memory data = abi.encode(token, amount, targetProtocol);
 
         return
-            this.sendMessage(
+            _sendMessage(
                 destinationChain,
                 yieldOptimizer,
                 MessageType.YIELD_REBALANCE,
@@ -336,7 +370,17 @@ contract CCIPMessenger is
         uint256 maxRate,
         uint256 duration,
         PayFeesIn payFeesIn
-    ) external payable override returns (bytes32 messageId) {
+    )
+        external
+        payable
+        override
+        onlyAllowlistedSender
+        onlyAllowlistedChain(destinationChain)
+        onlyEnabledMessageType(MessageType.LOAN_REQUEST)
+        nonReentrant
+        whenNotPaused
+        returns (bytes32 messageId)
+    {
         bytes memory data = abi.encode(
             msg.sender,
             collateralToken,
@@ -348,7 +392,7 @@ contract CCIPMessenger is
         );
 
         return
-            this.sendMessage(
+            _sendMessage(
                 destinationChain,
                 lendingContract,
                 MessageType.LOAN_REQUEST,
@@ -369,11 +413,21 @@ contract CCIPMessenger is
         uint256 amount,
         uint256 loanId,
         PayFeesIn payFeesIn
-    ) external payable override returns (bytes32 messageId) {
+    )
+        external
+        payable
+        override
+        onlyAllowlistedSender
+        onlyAllowlistedChain(destinationChain)
+        onlyEnabledMessageType(MessageType.COLLATERAL_TRANSFER)
+        nonReentrant
+        whenNotPaused
+        returns (bytes32 messageId)
+    {
         bytes memory data = abi.encode(loanId, msg.sender);
 
         return
-            this.sendMessage(
+            _sendMessage(
                 destinationChain,
                 lendingContract,
                 MessageType.COLLATERAL_TRANSFER,
@@ -393,7 +447,7 @@ contract CCIPMessenger is
         bytes calldata data,
         address token,
         uint256 amount,
-        PayFeesIn payFeesIn
+        PayFeesIn /* payFeesIn */
     ) external view override returns (uint256 fee) {
         if (!chainConfigs[destinationChain].isSupported) {
             revert ChainNotAllowlisted(destinationChain);
@@ -553,8 +607,8 @@ contract CCIPMessenger is
      * @notice Set the LINK token address for fee payments
      */
     function setLinkToken(
-        address linkToken
-    ) external override onlyRole(ADMIN_ROLE) {
+        address /* linkToken */
+    ) external view override onlyRole(ADMIN_ROLE) {
         // Note: LINK token is immutable in this implementation
         // This function is kept for interface compatibility
         revert("LINK token is immutable");
@@ -616,7 +670,7 @@ contract CCIPMessenger is
      */
     function retryFailedMessage(
         bytes32 messageId,
-        uint256 newGasLimit
+        uint256 /* newGasLimit */
     ) external override onlyRole(ADMIN_ROLE) {
         if (failedMessages[messageId] == 0) {
             revert("Message not failed");
@@ -820,7 +874,7 @@ contract CCIPMessenger is
     function _buildMessage(
         address receiver,
         MessageType messageType,
-        bytes calldata data,
+        bytes memory data,
         address token,
         uint256 amount
     ) internal view returns (Client.EVM2AnyMessage memory) {

@@ -1,507 +1,196 @@
-_Note: This repo has been recently updated for Sepolia_
+# Alioth ⚡️ – AI-Driven Cross-Chain Yield Optimizer
 
-# Foundry Starter Kit
+![Chainlink CCIP](https://img.shields.io/badge/Chainlink-CCIP-blue)
+![Foundry](https://img.shields.io/badge/Built%20With-Foundry-red)
+![Hackathon](https://img.shields.io/badge/Hackathon-Project-important)
 
-<br/>
-<p align="center">
-<a href="https://chain.link" target="_blank">
-<img src="./img/chainlink-foundry.png" width="225" alt="Chainlink Foundry logo">
-</a>
-</p>
-<br/>
+> **Alioth** is an on-chain, cross-chain yield optimiser that discovers the best APRs, routes liquidity, and rebalances positions **automatically** using Chainlink Feeds, Automation, and CCIP.
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/smartcontractkit/foundry-starter-kit)
+---
 
-Foundry Starter Kit is a repo that shows developers how to quickly build, test, and deploy smart contracts with one of the fastest frameworks out there, [foundry](https://github.com/gakonst/foundry)!
+## 🚩 Problem Statement
 
-- [Foundry Starter Kit](#foundry-starter-kit)
-- [Getting Started](#getting-started)
-  - [Requirements](#requirements)
-  - [Quickstart](#quickstart)
-  - [Testing](#testing)
-- [Deploying to a network](#deploying-to-a-network)
-  - [Setup](#setup)
-  - [Deploying](#deploying)
-    - [Working with a local network](#working-with-a-local-network)
-    - [Working with other chains](#working-with-other-chains)
-- [Security](#security)
-- [Contributing](#contributing)
-- [Thank You!](#thank-you)
-  - [Resources](#resources)
-    - [TODO](#todo)
+Today's yield strategies are siloed per chain and rely on unverified off-chain signals. Users face:
 
-# Getting Started
+1. **Fragmented Liquidity** – Attractive APRs move across chains (and between Aave ⇄ Compound), forcing manual bridging.
+2. **Data Integrity Risks** – Bots can feed falsified rates to naïve contracts, leading to mis-allocations or losses.
+3. **Cumbersome UX** – Depositing into multiple protocols on multiple chains requires a dozen approvals and UI hops.
 
-## Requirements
+---
 
-Please install the following:
+## 🟢 Solution
 
-- [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
-  - You'll know you've done it right if you can run `git --version`
-- [Foundry / Foundryup](https://github.com/gakonst/foundry)
-  - This will install `forge`, `cast`, and `anvil`
-  - You can test you've installed them right by running `forge --version` and get an output like: `forge 0.2.0 (f016135 2022-07-04T00:15:02.930499Z)`
-  - To get the latest of each, just run `foundryup`
+Alioth delivers:
 
-## Quickstart
+1. **Cross-Chain Deposits (Live)** – One transaction deposits and, if needed, bridges assets to Sepolia, Base-Sepolia, or Avalanche Fuji via CCIP.
+2. **Protocol Abstraction (Live)** – Uniform adapters expose the same interface for **Aave** and **Compound**.
+3. **Chainlink-Verified Recommendations (Live)** – Every AI hint is validated on-chain via fresh price & APY feeds before execution.
+4. **Automation for Test Feeds (Live)** – `MockV3Aggregator` keeps demo price feeds fresh with Chainlink Automation.
+5. **Automated Rebalancing (Planned)** – Upkeep stubs are ready; v0.2 will introduce on-chain liquidity migration.
 
-```sh
-git clone https://github.com/smartcontractkit/foundry-starter-kit
-cd foundry-starter-kit
+---
+
+## 1️⃣ Why Alioth?
+
+Current yield aggregators are usually locked to a single chain, rely on off-chain cron jobs, and make naïve rebalancing decisions. Alioth solves these issues by combining:
+
+1. **On-Chain Portfolio Logic** – Solidity contracts that hold assets and talk to protocol adapters (Aave, Compound, …).
+2. **Chainlink Feeds & Automation** – Reliable APY / price data and keeper-style jobs that trigger rebalances.
+3. **Chainlink CCIP** – Trust-minimised cross-chain messaging & token transfers so the optimiser can chase yields on any supported network.
+4. **Optional AI Agent (off-chain)** – _not required for judging;_ all critical portfolio logic lives **on-chain**. No backend setup is necessary for the demo.
+
+---
+
+## 2️⃣ Contract Overview
+
+```text
+alioth_contracts/src
+├── core
+│   ├── AliothYieldOptimizer.sol   # Main orchestrator
+│   ├── AliothVault.sol            # ERC-4626-style vault wrapper
+│   ├── CCIPMessenger.sol          # Cross-chain router (CCIP)
+│   └── ChainlinkFeedManager.sol   # Manages price / APY / vol feeds
+├── adapters
+│   ├── AaveAdapter.sol            # Talks to Aave v3 markets
+│   └── CompoundAdapter.sol        # Talks to Compound v3
+├── libraries
+│   ├── DynamicAllocationLib.sol   # (WIP) multi-factor optimiser
+│   ├── MathLib.sol                # Fixed-point helpers
+│   └── ValidationLib.sol          # Common require helpers
+├── mocks
+│   └── MockV3Aggregator.sol       # Test oracle with Automation
+└── factories
+    └── ReceiptTokenFactory.sol    # Minimal-proxy receipt tokens
 ```
 
-## Install dependencies as follows:
+### Core Contracts in Detail
 
-Run `forge install` to install dependencies. [Foundry uses git submodules](https://book.getfoundry.sh/projects/dependencies) as its dependency management system.
+| Contract                                        | Purpose                                                                                                                                                                    | Key Chainlink Usage                                                                                                                                        |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AliothYieldOptimizer**                        | Central brain that holds assets, tracks supported adapters, and decides where funds should go. Handles deposits/withdrawals, maintains APY cache, and executes rebalances. | • Feeds – `getBestProtocolAPY` <br> • Automation – `checkUpkeep` / `performUpkeep` <br> • (WIP) Will call `DynamicAllocationLib` for multi-protocol splits |
+| **AliothVault** (ERC-4626)                      | User-facing wrapper that tokenises positions (mints `AliothReceiptToken`). Delegates capital to the Optimizer and enforces slippage checks.                                | • Feeds – price validation on deposits/withdrawals                                                                                                         |
+| **ChainlinkFeedManager**                        | Aggregator & registrar for price / APY / volatility feeds. Caches projections for gas efficiency.                                                                          | • Feeds – direct calls to `AggregatorV3Interface`                                                                                                          |
+| **CCIPMessenger**                               | Thin wrapper around `RouterClient` that sends/receives liquidity & instructions between chains. Includes allow-lists for dest / source chains and authorised senders.      | • CCIP – token+message send / receive                                                                                                                      |
+| **Adapters** (`AaveAdapter`, `CompoundAdapter`) | Protocol-specific wrappers that normalise deposits, withdrawals, TVL, APY, health metrics.                                                                                 | —                                                                                                                                                          |
+| **DynamicAllocationLib**                        | Scoring engine that produces weighted allocations from Chainlink data + adapter stats. Integration planned post-hackathon.                                                 | • Feeds – price, APY, volatility                                                                                                                           |
+| **MockV3Aggregator** _(test only)_              | Lightweight on-chain oracle used in demos and unit tests. Can self-update its answer every `interval` seconds via Chainlink Automation.                                    | • Implements `AggregatorV3Interface` <br> • Automation – `checkUpkeep` / `performUpkeep` push new rounds                                                   |
 
-> ⚠️ when running forge install, you may see an error message if you have uncomitted changes in your repo. Read the message carefully - it may inform you that you can add the `--no-commit` flag to each of these `install` commands if your workspace has uncommitted changes.
+### End-to-End Flow
 
-You can update dependencies by running `forge update`
+1. **Deposit** → Vault pulls token, validates price & APY via FeedManager (guarding against stale or malicious AI data), then forwards funds plus the `targetProtocol` hint to the Optimizer.
+2. **Allocation** → Optimizer calls the chosen Adapter (**Aave** or **Compound**) on the selected chain.
+3. **Automation** _(test only)_ → `MockV3Aggregator` self-updates via Automation. Optimizer Upkeep is a stub until migration logic arrives in v0.2.
+4. **Cross-Chain** → If the chosen chain differs from the origin (Sepolia ⇄ Base-Sepolia ⇄ Fuji), Optimizer sends a CCIP message + token transfer; the destination Optimizer performs the deposit.
 
-## Testing
+---
 
-To check that everything is compiling and working as intended after cloning and installing dependencies, run
+## 3️⃣ Pre-Deployed Contracts (Testnets)
 
-```
-forge test
-```
+| Network        | Feed Manager                                 | Optimizer                                    | Vault                                        | CCIP Messenger                               |
+| -------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Sepolia        | `0x471e0DC1B324c3bE18B9D6a46cDBdDD6464078A6` | `0x3499331d4c0d88028a61bf1516246C29C30AFf8E` | `0x3811F1a5481Ec93ac99d8e76A6FA6C4f6EFd39D4` | `0x86a89efA6029eFEd8b21cDC0A4760761376c2A47` |
+| Base Sepolia   | `0xfB300529C4098A956F5C2f15D7E322717097411f` | `0x9F26D100fdB2Ca6810019062B9a3C6c01Afa21e6` | `0x8BA1D001466b23F844041112E92a07e99Cb439F6` | `0xbd82c2a2AA4c5eAB8D401E0b1362CA4548C7BB45` |
+| Avalanche Fuji | `0xA4F7c5c3d3fba94Bf77C89bD41818D7662ed9dAE` | `0x2F05369A361e7F452F5e5393a565D4d1cA88F80A` | `0x5d69494cA5e2B7349B2C81F8acf63E1E15057586` | `0x9C62BFe2134C990ef373DF581487d51Eb4Efa989` |
 
-All tests should pass.
+### Adapter Addresses
 
-# Chainlink Foundry Starter Kit
+| Network        | AaveAdapter                                  | CompoundAdapter                              | Mock Price Feed                              |
+| -------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Sepolia        | `0x2F9F0e0f3B936278983498E85cf022ce0Bb7EF2A` | `0x2745490eab4A90a82C80Db969F2Bb2A063c67Dd5` | `0xe21A8b41FC50fd43CFE52AC67790BB60509eAB88` |
+| Base Sepolia   | —                                            | `0x62843F00870d99decd0F720038E35fD5114eFd43` | `0x24813C3acf475b9c8Abce1B5E34775A8448f7eD5` |
+| Avalanche Fuji | `0x5E4FfA1d7783E2465F7243D86fFC4Fe64011549B` | —                                            | `0x3C4C8B3AA7C43C6045C7bA3517583E355faDe272` |
 
-Implementation of the following 4 Chainlink services using the [Foundry] (https://book.getfoundry.sh/) smart contract development tooling:
+---
 
-- [Chainlink Price Feeds](https://docs.chain.link/docs/using-chainlink-reference-contracts)
-- [Chainlink VRF V2](https://docs.chain.link/docs/chainlink-vrf)
-- [Chainlink Automation](https://docs.chain.link/chainlink-automation/introduction)
+## 4️⃣ Quick Start (Local)
 
-For [Chainlink Functions](https://docs.chain.link/chainlink-functions) please go to these starter kits: [Hardhat](https://github.com/smartcontractkit/functions-hardhat-starter-kit) | [Foundry (coming soon)](https://github.com/smartcontractkit/functions-foundry-starter-kit)
+```bash
+# 0. Prerequisites
+#    – Foundry (https://book.getfoundry.sh/)
+#    – Node ≥18 if you want to run the AI backend later
 
-For [Chainlink CCIP (Cross Chain Interoperability Prototocol)](https://docs.chain.link/ccip) please go to these starter kits: [Hardhat](https://github.com/smartcontractkit/ccip-starter-kit-hardhat) | [Foundry](https://github.com/smartcontractkit/ccip-starter-kit-foundry)
+# 1. Clone + install submodules
+$ git clone https://github.com/<your-fork>/alioth_contracts.git
+$ cd alioth_contracts
+$ forge install           # pulls OZ, solmate, etc.
 
-# Deploying to a network
+# 2. Run tests
+$ forge test -vv          # ≈400 smart-contract tests
 
-Deploying to a network uses the [foundry scripting system](https://book.getfoundry.sh/tutorials/solidity-scripting.html), where you write your deploy scripts in solidity!
-
-## Setup
-
-We'll demo using the Sepolia testnet. (Go here for [testnet sepolia ETH](https://faucets.chain.link/).)
-
-You'll need to add the following variables to a `.env` file:
-
-- `SEPOLIA_RPC_URL`: A URL to connect to the blockchain. You can get one for free from [Infura](https://www.infura.io/) account
-- `PRIVATE_KEY`: A private key from your wallet. You can get a private key from a new [Metamask](https://metamask.io/) account
-  - Additionally, if you want to deploy to a testnet, you'll need test ETH and/or LINK. You can get them from [faucets.chain.link](https://faucets.chain.link/).
-- Optional `ETHERSCAN_API_KEY`: If you want to verify on etherscan
-
-When you've added your environment variables to the `.env` file, run `source .env` in your terminal (and for each new terminal session) to load the environment variables into your terminal.
-
-## Deploying
-
-Deploy scripts are in `./script`. The relevant Chainlink Service can be determined from the name of the Contract script. `HelperConfig` is not meant to be deployed.
-
-To deploy one of the Chainlink Service consumer contracts run the script as follows:
-
-```
-forge script script/${CONTRACT_NAME}.s.sol:Deploy${CONTRACT_NAME} --rpc-url $SEPOLIA_RPC_URL  --private-key PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY  -vvvv
-make deploy-sepolia contract=<CONTRACT_NAME>
-```
-
-For example, to deploy the `PriceFeedConsumer` contract:
-
-```
-forge script script/PriceFeedConsumer.s.sol:DeployPriceFeedConsumer  --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY -vvvv
+# 3. Deploy core to anvil
+$ forge script script/DeployCore.s.sol --fork-url http://localhost:8545 --broadcast
 ```
 
-If you don't have an `ETHERSCAN_API_KEY`, you can omit `--verify --etherscan-api-key $ETHERSCAN_API_KEY`
+_Tip:_ all deploy scripts accept `--rpc-url` & `--private-key` so you can broadcast to public testnets.
 
-### Working with Anvil local development network
+---
 
-Foundry comes with local network [anvil](https://book.getfoundry.sh/anvil/index.html) baked in, and allows us to deploy to our local network for quick testing locally.
+## 5️⃣ Testing
 
-To start a local network run the following in a new terminal window or tab:
+Below are the core Vault functions. They are fully network-agnostic—just point `$RPC` and contract addresses at Sepolia, Base-Sepolia, or Avalanche Fuji.
 
-```
-anvil
-```
-
-This will spin up a local blockchain on `http://localhost:8545` : (see console output for the mnemonic used, and 10 private keys and their associated wallet address), so you can use the same private key each time.
-
-Then, you can deploy to it with one of those private keys; in this example we use the first one:
-
-```
-forge script script/${contract}.s.sol:Deploy${contract} --rpc-url http://localhost:8545  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
-```
-
-### Working with other chains
-
-To add a chain, you'd just need to pass in the RPC URL for the relevant chain to the `--rpc-url` flag.
-
-```
-forge script script/${contract}.s.sol:Deploy${contract} --rpc-url ${<OTHER_CHAIN>_RPC_URL}  --private-key ${PRIVATE_KEY} --broadcast -vvvv
-
-```
-
-# Security
-
-This framework comes with slither parameters, a popular security framework from [Trail of Bits](https://www.trailofbits.com/). To use slither, you'll first need to [install python](https://www.python.org/downloads/) and [install slither](https://github.com/crytic/slither#how-to-install).
-
-Then, you can run:
-
-```
-make slither
-```
-
-And get your slither output.
-
-# Contributing
-
-Contributions are always welcome! Open a PR or an issue!
-If you do contribute please add `solidity.formatter": "forge` to your VSCode Settings, or run `forge fmt` before you commit and push.
-
-# Thank You!
-
-## Resources
-
-- [Chainlink Documentation](https://docs.chain.link/)
-- [Foundry Documentation](https://book.getfoundry.sh/)
-
-### TODO
-
-[ ] Add bash scripts to interact with contracts using `cast`
-
-[ ] Make deploying contracts to `anvil` simpler
-
-# Alioth Smart Contracts
-
-Alioth is an AI-driven cross-chain DeFi platform that combines yield optimization and undercollateralized lending. The smart contracts provide the core infrastructure for automated yield farming and cross-chain lending with AI-powered decision making.
-
-## 🏗️ Architecture Overview
-
-### Core Components
-
-1. **Yield Optimizer Module**: AI-driven APR chasing across protocols and chains
-2. **Cross-Chain Lending Module**: Undercollateralized loans with dynamic rates
-3. **CCIP Integration**: Chainlink CCIP for secure cross-chain communication
-4. **Protocol Adapters**: Uniform interfaces for DeFi protocol integration
-5. **AI Agent Integration**: Role-based access for ElizaOS agents
-
-### Key Features
-
-- **AI-Driven Yield Optimization**: Automatically rebalances funds across protocols for optimal APY
-- **Cross-Chain Lending**: Borrow assets on one chain using collateral from another
-- **Undercollateralized Loans**: Dynamic interest rates based on credit scoring
-- **Idle Collateral Routing**: Automatically routes loan collateral into yield strategies
-- **Automated Liquidation Protection**: Monitors health factors and prevents liquidations
-- **Emergency Circuit Breakers**: Multi-layered security with emergency stops
-
-## 📁 Contract Structure
-
-```
-src/
-├── interfaces/           # Contract interfaces
-│   ├── IProtocolAdapter.sol
-│   ├── IYieldOptimizer.sol
-│   ├── ICrossChainLending.sol
-│   └── ICCIPMessenger.sol
-├── libraries/           # Shared libraries
-│   ├── ValidationLib.sol
-│   └── MathLib.sol
-├── core/               # Core contracts
-│   ├── YieldOptimizer.sol
-│   ├── CrossChainLending.sol
-│   └── CCIPMessenger.sol
-├── adapters/           # Protocol adapters
-│   └── AaveAdapter.sol
-└── script/             # Deployment scripts
-    └── DeployAlioth.s.sol
-```
-
-## 🔧 Core Contracts
-
-### YieldOptimizer
-
-The main yield optimization engine that manages fund allocation across multiple protocols.
-
-**Key Functions:**
-
-- `deposit()`: Deposit tokens with automatic optimal allocation
-- `withdraw()`: Withdraw tokens with minimal market impact
-- `executeRebalance()`: Rebalance funds based on AI recommendations
-- `harvestAll()`: Harvest yield from all integrated protocols
-
-**AI Integration:**
-
-- Chainlink Automation for automated rebalancing
-- Role-based access for AI agents (`REBALANCER_ROLE`)
-- Real-time APY monitoring and optimization
-
-### CrossChainLending
-
-Enables undercollateralized lending with cross-chain capabilities.
-
-**Key Functions:**
-
-- `requestLoan()`: Submit loan request with collateral
-- `approveLoan()`: AI agent approves loans based on credit analysis
-- `makePayment()`: Make loan payments with automatic interest calculation
-- `liquidateLoan()`: Liquidate undercollateralized positions
-
-**Dynamic Features:**
-
-- Credit score-based interest rates
-- Health factor monitoring
-- Cross-chain collateral management
-- Automatic yield routing for idle collateral
-
-### CCIPMessenger
-
-Handles secure cross-chain communication using Chainlink CCIP.
-
-**Key Functions:**
-
-- `sendMessage()`: Send cross-chain messages with optional token transfers
-- `sendYieldRebalance()`: Trigger rebalancing on other chains
-- `sendLoanRequest()`: Submit cross-chain loan requests
-- `sendLiquidationTrigger()`: Trigger liquidations across chains
-
-## 🔌 Protocol Integration
-
-### IProtocolAdapter Interface
-
-All protocol integrations implement the standardized `IProtocolAdapter` interface:
+### Solidity Signatures
 
 ```solidity
-interface IProtocolAdapter {
-    function protocolName() external view returns (string memory);
-    function getAPY(address token) external view returns (uint256);
-    function deposit(address token, uint256 amount, uint256 minShares) external returns (uint256);
-    function withdraw(address token, uint256 shares, uint256 minAmount) external returns (uint256);
-    function harvestYield(address token) external returns (uint256);
-    // ... additional functions
-}
+/**
+ * Deposit tokens and let the optimiser choose where to earn yield.
+ * - token: ERC-20 address (e.g. LINK)
+ * - amount: deposit size
+ * - minShares: slippage guard (can be 0 for tests)
+ * - targetProtocol: "aave" | "compound" (AI recommendation)
+ */
+function deposit(
+    address token,
+    uint256 amount,
+    uint256 minShares,
+    string calldata targetProtocol
+) external nonReentrant returns (uint256 shares);
+
+/**
+ * Burn receipt tokens and receive the underlying asset back.
+ */
+function withdraw(
+    address token,
+    uint256 shares,
+    uint256 minAmount,
+    string calldata targetProtocol
+) external nonReentrant returns (uint256 amount);
 ```
 
-### Supported Protocols
-
-- **Aave**: Lending protocol adapter (`AaveAdapter.sol`)
-- **Compound**: (Planned)
-- **Yearn Finance**: (Planned)
-- **Convex**: (Planned)
-
-## 🤖 AI Agent Integration
-
-### Role-Based Access Control
-
-The contracts implement role-based access control for AI agents:
-
-```solidity
-// Yield Optimizer Roles
-bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
-bytes32 public constant HARVESTER_ROLE = keccak256("HARVESTER_ROLE");
-
-// Lending Roles
-bytes32 public constant UNDERWRITER_ROLE = keccak256("UNDERWRITER_ROLE");
-bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
-
-// Cross-Chain Roles
-bytes32 public constant SENDER_ROLE = keccak256("SENDER_ROLE");
-```
-
-### AI Agent Functions
-
-**Yield Monitoring Agent:**
-
-- Monitors APRs across protocols
-- Triggers rebalancing when profitable
-- Harvests yield automatically
-
-**Underwriting Agent:**
-
-- Processes loan applications
-- Analyzes credit data and risk factors
-- Approves loans with dynamic rates
-
-**Liquidation Monitor:**
-
-- Monitors loan health factors
-- Triggers liquidations before defaults
-- Optimizes liquidation strategies
-
-## 🛡️ Security Features
-
-### Access Control
-
-- Multi-signature requirements for admin functions
-- Role-based access for different operations
-- Timelock mechanisms for critical parameter updates
-
-### Safety Mechanisms
-
-- Emergency stop functionality across all contracts
-- Reentrancy guards on all external functions
-- Slippage protection for all trades
-- Oracle staleness checks
-
-### Validation
-
-- Comprehensive input validation using `ValidationLib`
-- Custom errors for gas efficiency
-- Range checks for all parameters
-
-## 🚀 Deployment
-
-### Prerequisites
-
-1. Install Foundry:
+### Quick Cast Examples
 
 ```bash
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
+# Approve Vault and deposit 1 LINK into Aave on Sepolia
+cast send $LINK "approve(address,uint256)" $VAULT 1000000000000000000 \
+  --rpc-url $RPC --account $PK
+
+cast send $VAULT "deposit(address,uint256,uint256,string)" \
+  $LINK 1000000000000000000 0 "aave" \
+  --rpc-url $RPC --account $PK
+
+# Withdraw all shares back from Compound on Base-Sepolia
+cast send $VAULT "withdraw(address,uint256,uint256,string)" \
+  $LINK $MY_SHARES 0 "compound" \
+  --rpc-url $BASE_RPC --account $PK
 ```
 
-2. Install dependencies:
+For cross-chain tests, use the _allow-list_ commands shown earlier, then call `initiateCrossChainRebalance` from the Optimizer.
 
-```bash
-forge install
-```
+---
 
-3. Set environment variables:
+## 6️⃣ Project Roadmap
 
-```bash
-export ADMIN_ADDRESS=0x...
-export FEE_COLLECTOR=0x...
-export RPC_URL=https://...
-export PRIVATE_KEY=0x...
-```
+| Phase               | Features                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **MVP (hackathon)** | Single-protocol deposit, APY-based rebalancing stub, CCIP scaffolding                                                                                  |
+| **Post-hackathon**  | 🔜 Integrate `DynamicAllocationLib` for weighted splits <br> 🔜 Full on-chain liquidity migration <br> 🔜 Front-end dashboard & AI backend open-source |
 
-### Deploy to Testnet
+---
 
-```bash
-forge script script/DeployAlioth.s.sol:DeployTestnet --rpc-url $RPC_URL --broadcast --verify
-```
+## 7️⃣ Contributing / Questions
 
-### Deploy to Mainnet
+Pull Requests are welcome! For issues reach out in the **Alioth** Discord channel.
 
-```bash
-forge script script/DeployAlioth.s.sol:DeployAlioth --rpc-url $RPC_URL --broadcast --verify
-```
+---
 
-## 🔗 Chain Support
-
-### Supported Networks
-
-- **Ethereum**: Main deployment with full protocol support
-- **Polygon**: Cross-chain lending and yield optimization
-- **Arbitrum**: Lower gas costs for frequent operations
-- **Avalanche**: (Planned)
-- **Base**: (Planned)
-
-### Cross-Chain Configuration
-
-Each deployment supports cross-chain operations via Chainlink CCIP:
-
-```solidity
-// Chain Selectors
-uint64 constant ETHEREUM_SELECTOR = 5009297550715157269;
-uint64 constant POLYGON_SELECTOR = 4051577828743386545;
-uint64 constant ARBITRUM_SELECTOR = 4949039107694359620;
-```
-
-## 📊 Key Metrics & KPIs
-
-- **TVL Target**: $10M+ by launch
-- **APY Performance**: Beat benchmark by 2%+
-- **Liquidation Rate**: <2% of loans
-- **Agent Uptime**: 99.9%
-- **Cross-chain Success Rate**: >98%
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-forge test
-```
-
-Run tests with gas reporting:
-
-```bash
-forge test --gas-report
-```
-
-Run specific test files:
-
-```bash
-forge test --match-path test/YieldOptimizer.t.sol
-```
-
-## 📚 Integration Examples
-
-### Frontend Integration
-
-```typescript
-import { YieldOptimizer__factory } from './types'
-
-const yieldOptimizer = YieldOptimizer__factory.connect(contractAddress, signer)
-
-// Deposit tokens with optimal allocation
-const tx = await yieldOptimizer.deposit(tokenAddress, amount, minShares)
-```
-
-### Backend API Integration
-
-```typescript
-// Monitor rebalancing opportunities
-const shouldRebalance = await yieldOptimizer.shouldRebalance(
-  tokenAddress,
-  minImprovementBps,
-)
-
-if (shouldRebalance) {
-  // Trigger AI agent rebalancing
-  await triggerRebalanceAgent(tokenAddress)
-}
-```
-
-## 🏛️ Governance & Upgrades
-
-### Parameter Updates
-
-Critical parameters can be updated through admin functions:
-
-- Interest rate models
-- LTV ratios and liquidation thresholds
-- Protocol weights and allocations
-- Fee rates and slippage tolerances
-
-### Emergency Procedures
-
-1. **Emergency Stop**: Immediate halt of all operations
-2. **Parameter Freeze**: Lock parameter updates during incidents
-3. **Fund Recovery**: Emergency withdrawal of stuck funds
-4. **Protocol Pause**: Disable specific protocol integrations
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔗 Links
-
-- **Documentation**: [docs.alioth.finance](https://docs.alioth.finance)
-- **Website**: [alioth.finance](https://alioth.finance)
-- **Discord**: [discord.gg/alioth](https://discord.gg/alioth)
-- **Twitter**: [@AliothFinance](https://twitter.com/AliothFinance)
-
-## ⚠️ Disclaimer
-
-This software is experimental and unaudited. Use at your own risk. The Alioth protocol is under active development and contracts may change without notice.
+<p align="center">Made with ❤️  for Chainlink ✦ Monad ✦ ETHGlobal</p>

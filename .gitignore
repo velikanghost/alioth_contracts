@@ -11,6 +11,9 @@ package-lock.json
 
 .DS_Store
 src/.DS_Store
-how_to_test.md
-llms.txt
-dev_process.md
+steps_to_test.txt
+notes.txt
+contract_focus.txt
+how_to_ccip.txt
+issues.txt
+automation.txt
