@@ -20,13 +20,13 @@ Today's yield strategies are siloed per chain and rely on unverified off-chain s
 
 ## 🟢 Solution
 
-Alioth tackles those points with an all-on-chain approach:
+Alioth delivers:
 
-• **Cross-Chain Deposits (Live)** – Users deposit once and Alioth bridges to Sepolia, Base-Sepolia, or Avalanche Fuji behind the scenes.
-• **Protocol Abstraction (Live)** – Uniform adapters for **Aave** and **Compound** mean one API for both.
-• **Chainlink-Verified Recommendations (Live)** – Every AI suggestion is validated on-chain via fresh price + APY feeds.
-• **Automation for Test Feeds (Live)** – `MockV3Aggregator` uses Chainlink Automation to self-update during demos.
-• **Automated Rebalancing (Planned)** – Optimizer contains Upkeep stubs; on-chain liquidity moves will ship in v0.2.
+1. **Cross-Chain Deposits (Live)** – One transaction deposits and, if needed, bridges assets to Sepolia, Base-Sepolia, or Avalanche Fuji via CCIP.
+2. **Protocol Abstraction (Live)** – Uniform adapters expose the same interface for **Aave** and **Compound**.
+3. **Chainlink-Verified Recommendations (Live)** – Every AI hint is validated on-chain via fresh price & APY feeds before execution.
+4. **Automation for Test Feeds (Live)** – `MockV3Aggregator` keeps demo price feeds fresh with Chainlink Automation.
+5. **Automated Rebalancing (Planned)** – Upkeep stubs are ready; v0.2 will introduce on-chain liquidity migration.
 
 ---
 
