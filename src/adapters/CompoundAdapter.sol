@@ -77,7 +77,7 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
      * @return The protocol name
      */
     function protocolName() external pure returns (string memory) {
-        return "Compound III";
+        return "Compound";
     }
 
     /**
@@ -113,7 +113,6 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
                         // Continue without COMP rewards if calculation fails
                     }
 
-                    // Cap at reasonable maximum (100%)
                     if (apy > 10000) apy = 10000;
                 } catch {
                     apy = 0;
@@ -134,14 +133,12 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
      */
     function getTVL(address token) external view returns (uint256 tvl) {
         if (token == baseAsset) {
-            // For base asset, get total supply
             try comet.totalSupply() returns (uint256 totalSupply) {
                 tvl = totalSupply;
             } catch {
                 tvl = 0;
             }
         } else {
-            // For collateral assets, get total collateral
             try comet.totalsCollateral(token) returns (
                 TotalsCollateral memory totals
             ) {
@@ -169,10 +166,8 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         require(amount > 0, "Amount must be greater than 0");
         require(msg.value == 0, "ETH not supported");
 
-        // Check if protocol is paused
         require(!comet.isSupplyPaused(), "Supply is paused");
 
-        // Get initial balance
         uint256 initialBalance;
         if (token == baseAsset) {
             initialBalance = comet.balanceOf(address(this));
@@ -182,12 +177,10 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
             );
         }
 
-        // Transfer tokens from user and approve Comet
         ERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         ERC20(token).safeApprove(address(comet), amount);
 
         try comet.supply(token, amount) {
-            // Calculate shares received
             uint256 finalBalance;
             if (token == baseAsset) {
                 finalBalance = comet.balanceOf(address(this));
@@ -199,14 +192,11 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
 
             shares = finalBalance - initialBalance;
 
-            // For Compound III, shares generally equal amount for base asset
-            // For collateral, it's 1:1 as well unless there are scaling differences
             if (shares == 0) {
-                shares = amount; // Fallback to deposited amount
+                shares = amount;
             }
 
-            // Validate minimum shares
-            ValidationLib.validateSlippage(minShares, shares, 500); // 5% max slippage
+            ValidationLib.validateSlippage(minShares, shares, 500);
 
             emit Deposited(token, amount, shares);
         } catch Error(string memory reason) {
@@ -234,10 +224,8 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         shares.validateAmount();
         require(shares > 0, "Shares must be greater than 0");
 
-        // Check if protocol is paused
         require(!comet.isWithdrawPaused(), "Withdraw is paused");
 
-        // Check available balance
         uint256 availableBalance;
         if (token == baseAsset) {
             availableBalance = comet.balanceOf(address(this));
@@ -248,23 +236,18 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         }
         require(availableBalance >= shares, "Insufficient balance");
 
-        // Get initial token balance
         uint256 initialBalance = ERC20(token).balanceOf(address(this));
 
         try comet.withdraw(token, shares) {
-            // Calculate amount received
             uint256 finalBalance = ERC20(token).balanceOf(address(this));
             amount = finalBalance - initialBalance;
 
-            // In Compound III, withdrawal amount typically equals shares withdrawn
             if (amount == 0) {
                 amount = shares; // Fallback
             }
 
-            // Validate minimum amount
             ValidationLib.validateSlippage(minAmount, amount, 500); // 5% max slippage
 
-            // Transfer tokens to caller
             ERC20(token).safeTransfer(msg.sender, amount);
 
             emit Withdrawn(token, amount, shares);
@@ -285,7 +268,6 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
     function harvestYield(
         address token
     ) external returns (uint256 yieldAmount) {
-        // Claim COMP rewards
         uint256 initialCompBalance = ERC20(compToken).balanceOf(address(this));
 
         try rewards.claim(address(comet), address(this), true) {
@@ -295,13 +277,11 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
             yieldAmount = finalCompBalance - initialCompBalance;
 
             if (yieldAmount > 0) {
-                // Transfer COMP to caller (in production, might want to convert to base token)
                 ERC20(compToken).safeTransfer(msg.sender, yieldAmount);
             }
 
             emit YieldHarvested(token, yieldAmount);
         } catch {
-            // Continue if COMP claiming fails
             yieldAmount = 0;
             emit YieldHarvested(token, 0);
         }
@@ -319,7 +299,6 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
             return true;
         }
 
-        // Check if token is a supported collateral asset
         try comet.getAssetInfoByAddress(token) returns (AssetInfo memory) {
             return true;
         } catch {
@@ -352,7 +331,6 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         address token,
         uint256 shares
     ) external view returns (uint256 amount) {
-        // In Compound III, shares generally equal underlying amount 1:1
         amount = shares;
     }
 
@@ -366,7 +344,6 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
         address token,
         uint256 amount
     ) external view returns (uint256 shares) {
-        // In Compound III, shares generally equal underlying amount 1:1
         shares = amount;
     }
 
@@ -379,7 +356,6 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
     function getOperationalStatus(
         address token
     ) external view returns (bool isOperational, string memory statusMessage) {
-        // Check if token is supported
         if (token == baseAsset) {
             isOperational =
                 !comet.isSupplyPaused() &&
@@ -418,8 +394,7 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
             uint256 utilizationRate
         )
     {
-        // Compound III is considered high health protocol
-        healthScore = 9000; // 90% health score
+        healthScore = 9000;
 
         try comet.getUtilization() returns (uint256 utilization) {
             utilizationRate = (utilization * 10000) / BASE_SCALE;
@@ -448,11 +423,7 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
     function getRiskScore(
         address token
     ) external view returns (uint256 riskScore) {
-        // Compound III has low risk due to:
-        // - Battle-tested protocol evolution
-        // - Simplified architecture
-        // - Strong governance and security practices
-        riskScore = 1500; // 15% risk score (low risk)
+        riskScore = 1500;
     }
 
     /**
@@ -463,11 +434,8 @@ contract CompoundAdapter is IProtocolAdapter, ReentrancyGuard {
     function getMaxRecommendedAllocation(
         address token
     ) external view returns (uint256 maxAllocation) {
-        // Compound III can handle large allocations due to its robustness
-        maxAllocation = 7500; // 75% maximum allocation
+        maxAllocation = 7500;
     }
-
-    // ===== ADMIN FUNCTIONS =====
 
     /**
      * @notice Toggle emergency stop

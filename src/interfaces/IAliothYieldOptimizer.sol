@@ -2,11 +2,11 @@
 pragma solidity ^0.8.19;
 
 /**
- * @title IEnhancedYieldOptimizer
- * @notice Interface for the AI-driven Enhanced Yield Optimizer
+ * @title IAliothYieldOptimizer
+ * @notice Interface for the AI-driven Alioth Yield Optimizer
  * @dev Used by AliothVault to interact with the optimizer
  */
-interface IEnhancedYieldOptimizer {
+interface IAliothYieldOptimizer {
     // ===== CORE OPTIMIZATION FUNCTIONS =====
 
     /**
@@ -36,6 +36,21 @@ interface IEnhancedYieldOptimizer {
         uint256 amount,
         string calldata protocol
     ) external view returns (bool isValid);
+
+    /**
+     * @notice Execute withdrawal from a specific protocol
+     * @param token Token address to withdraw
+     * @param amount Amount to withdraw
+     * @param protocol Target protocol string ("aave", "compound", "yearn")
+     * @param beneficiary User address to send tokens to
+     * @return withdrawnAmount The actual amount withdrawn
+     */
+    function executeWithdrawal(
+        address token,
+        uint256 amount,
+        string calldata protocol,
+        address beneficiary
+    ) external returns (uint256 withdrawnAmount);
 
     // ===== VAULT AUTHORIZATION FUNCTIONS =====
 

@@ -5,18 +5,17 @@ import "@solmate/tokens/ERC20.sol";
 import "@solmate/utils/SafeTransferLib.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
-import "./EnhancedChainlinkFeedManager.sol";
-import "../libraries/CrossTokenOperationsLib.sol";
+import "./ChainlinkFeedManager.sol";
 import "../interfaces/IProtocolAdapter.sol";
 import "../interfaces/ICCIPMessenger.sol";
 import "../libraries/ValidationLib.sol";
 import "../libraries/MathLib.sol";
 
 /**
- * @title EnhancedYieldOptimizer
+ * @title AliothYieldOptimizer
  * @notice AI-driven yield optimization system with Chainlink integration
  */
-contract EnhancedYieldOptimizer is
+contract AliothYieldOptimizer is
     AutomationCompatibleInterface,
     ReentrancyGuard
 {
@@ -97,7 +96,7 @@ contract EnhancedYieldOptimizer is
     mapping(address => bool) public authorizedAIBackends;
 
     /// @notice Enhanced Chainlink Feed Manager
-    EnhancedChainlinkFeedManager public immutable enhancedFeedManager;
+    ChainlinkFeedManager public immutable feedManager;
 
     /// @notice CCIP messenger for cross-chain operations
     ICCIPMessenger public immutable ccipMessenger;
@@ -181,9 +180,7 @@ contract EnhancedYieldOptimizer is
         _admin.validateAddress();
 
         ccipMessenger = ICCIPMessenger(_ccipMessenger);
-        enhancedFeedManager = EnhancedChainlinkFeedManager(
-            _enhancedFeedManager
-        );
+        feedManager = ChainlinkFeedManager(_enhancedFeedManager);
         admin = _admin;
 
         // Grant admin role to deployer
@@ -317,13 +314,13 @@ contract EnhancedYieldOptimizer is
         require(beneficiary != address(0), "Invalid beneficiary");
 
         require(
-            enhancedFeedManager.validateTokenPrice(token, amount),
+            feedManager.validateTokenPrice(token, amount),
             "Chainlink price validation failed"
         );
 
         Protocol protocolEnum = _stringToProtocol(protocol);
 
-        uint256 currentAPY = enhancedFeedManager.getProtocolAPY(
+        uint256 currentAPY = feedManager.getProtocolAPY(
             uint8(protocolEnum),
             token
         );
@@ -378,12 +375,12 @@ contract EnhancedYieldOptimizer is
         uint256 amount,
         string calldata protocol
     ) external view returns (bool isValid) {
-        if (!enhancedFeedManager.validateTokenPrice(token, amount)) {
+        if (!feedManager.validateTokenPrice(token, amount)) {
             return false;
         }
 
         Protocol protocolEnum = _stringToProtocol(protocol);
-        uint256 currentAPY = enhancedFeedManager.getProtocolAPY(
+        uint256 currentAPY = feedManager.getProtocolAPY(
             uint8(protocolEnum),
             token
         );
@@ -413,11 +410,11 @@ contract EnhancedYieldOptimizer is
             block.timestamp >= opt.lastRebalance + REBALANCE_INTERVAL
         ) {
             // Check if better protocol available using Chainlink feeds
-            uint256 currentAPY = enhancedFeedManager.getProtocolAPY(
+            uint256 currentAPY = feedManager.getProtocolAPY(
                 uint8(opt.protocol),
                 opt.token
             );
-            uint256 bestAPY = enhancedFeedManager.getBestProtocolAPY(opt.token);
+            uint256 bestAPY = feedManager.getBestProtocolAPY(opt.token);
 
             if (bestAPY > currentAPY + REBALANCE_THRESHOLD) {
                 upkeepNeeded = true;
@@ -443,7 +440,7 @@ contract EnhancedYieldOptimizer is
         );
 
         require(
-            enhancedFeedManager.validateTokenPrice(opt.token, opt.amount),
+            feedManager.validateTokenPrice(opt.token, opt.amount),
             "Chainlink price validation failed for rebalancing"
         );
 
@@ -601,7 +598,7 @@ contract EnhancedYieldOptimizer is
         SingleOptimization storage opt = optimizations[optimizationId];
 
         // Find better protocol
-        uint256 bestAPY = enhancedFeedManager.getBestProtocolAPY(opt.token);
+        uint256 bestAPY = feedManager.getBestProtocolAPY(opt.token);
         if (bestAPY > expectedYield) {
             // Would execute rebalancing here
             // For now, just update the stored data
@@ -641,7 +638,7 @@ contract EnhancedYieldOptimizer is
     function _getTokenExpectedAPY(
         address token
     ) internal view returns (uint256 expectedAPY) {
-        uint256 projectedAPY = enhancedFeedManager.projectedAPYs(token);
+        uint256 projectedAPY = feedManager.projectedAPYs(token);
         return projectedAPY > 0 ? projectedAPY : 500; // 5% default
     }
 
@@ -703,5 +700,51 @@ contract EnhancedYieldOptimizer is
             expectedYield,
             timestamp
         );
+    }
+
+    /**
+     * @notice Execute withdrawal from a specific protocol
+     * @param token Token address to withdraw
+     * @param amount Amount to withdraw
+     * @param protocol Target protocol string ("aave", "compound", "yearn")
+     * @param beneficiary User address to send tokens to
+     * @return withdrawnAmount The actual amount withdrawn
+     */
+    function executeWithdrawal(
+        address token,
+        uint256 amount,
+        string calldata protocol,
+        address beneficiary
+    )
+        external
+        onlyAuthorizedVault
+        nonReentrant
+        whenNotStopped
+        returns (uint256 withdrawnAmount)
+    {
+        require(amount > 0, "Invalid amount");
+        require(beneficiary != address(0), "Invalid beneficiary");
+
+        require(
+            feedManager.validateTokenPrice(token, amount),
+            "Chainlink price validation failed"
+        );
+
+        Protocol protocolEnum = _stringToProtocol(protocol);
+        address protocolAdapter = _getProtocolAdapter(protocolEnum);
+        require(protocolAdapter != address(0), "Protocol adapter not found");
+        require(protocols[protocolAdapter].isActive, "Protocol not active");
+
+        // Execute withdrawal through protocol adapter
+        withdrawnAmount = IProtocolAdapter(protocolAdapter).withdraw(
+            token,
+            amount,
+            0 // minAmount set to 0 as slippage is checked at vault level
+        );
+
+        // Transfer withdrawn tokens to beneficiary
+        ERC20(token).safeTransfer(beneficiary, withdrawnAmount);
+
+        return withdrawnAmount;
     }
 }

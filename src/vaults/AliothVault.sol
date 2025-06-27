@@ -5,7 +5,7 @@ import "@solmate/tokens/ERC20.sol";
 import "@solmate/utils/SafeTransferLib.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "../interfaces/IEnhancedYieldOptimizer.sol";
+import "../interfaces/IAliothYieldOptimizer.sol";
 import "../libraries/ValidationLib.sol";
 import "../factories/ReceiptTokenFactory.sol";
 import "../tokens/AliothReceiptToken.sol";
@@ -20,11 +20,8 @@ contract AliothVault is ReentrancyGuard, Ownable {
     using ValidationLib for uint256;
     using ValidationLib for address;
 
-    IEnhancedYieldOptimizer public immutable enhancedYieldOptimizer;
+    IAliothYieldOptimizer public immutable aliothYieldOptimizer;
     ReceiptTokenFactory public immutable receiptTokenFactory;
-
-    /// @notice Mapping of authorized AI backends that can call deposit
-    mapping(address => bool) public authorizedAIBackends;
 
     /// @notice Token configuration and metadata
     struct TokenInfo {
@@ -46,7 +43,7 @@ contract AliothVault is ReentrancyGuard, Ownable {
 
     uint256 public depositFee = 0;
 
-    uint256 public withdrawalFee = 0; // 0% initially
+    uint256 public withdrawalFee = 0;
 
     uint256 public constant MAX_FEE = 500; // 5%
 
@@ -87,48 +84,22 @@ contract AliothVault is ReentrancyGuard, Ownable {
     event FeeRecipientUpdated(address oldRecipient, address newRecipient);
     event AIBackendAuthorized(address indexed aiBackend);
     event AIBackendRevoked(address indexed aiBackend);
+    event TokenLimitsUpdated(
+        address indexed token,
+        uint256 oldMinDeposit,
+        uint256 oldMaxDeposit,
+        uint256 newMinDeposit,
+        uint256 newMaxDeposit
+    );
 
-    modifier onlyAuthorizedAI() {
-        require(
-            authorizedAIBackends[msg.sender] || msg.sender == owner(),
-            "Not authorized AI backend"
-        );
-        _;
-    }
-
-    constructor(
-        address _enhancedYieldOptimizer,
-        address _owner
-    ) Ownable(_owner) {
-        _enhancedYieldOptimizer.validateAddress();
+    constructor(address _aliothYieldOptimizer, address _owner) Ownable(_owner) {
+        _aliothYieldOptimizer.validateAddress();
         _owner.validateAddress();
 
-        enhancedYieldOptimizer = IEnhancedYieldOptimizer(
-            _enhancedYieldOptimizer
-        );
+        aliothYieldOptimizer = IAliothYieldOptimizer(_aliothYieldOptimizer);
         feeRecipient = _owner;
 
-        // Deploy the receipt token factory
         receiptTokenFactory = new ReceiptTokenFactory(address(this));
-    }
-
-    /**
-     * @notice Authorize an AI backend to call deposit functions
-     * @param aiBackend Address of the AI backend
-     */
-    function authorizeAIBackend(address aiBackend) external onlyOwner {
-        require(aiBackend != address(0), "Invalid AI backend address");
-        authorizedAIBackends[aiBackend] = true;
-        emit AIBackendAuthorized(aiBackend);
-    }
-
-    /**
-     * @notice Revoke AI backend authorization
-     * @param aiBackend Address of the AI backend
-     */
-    function revokeAIBackend(address aiBackend) external onlyOwner {
-        authorizedAIBackends[aiBackend] = false;
-        emit AIBackendRevoked(aiBackend);
     }
 
     /**
@@ -144,7 +115,7 @@ contract AliothVault is ReentrancyGuard, Ownable {
         uint256 amount,
         uint256 minShares,
         string calldata targetProtocol
-    ) external onlyAuthorizedAI nonReentrant returns (uint256 shares) {
+    ) external nonReentrant returns (uint256 shares) {
         token.validateAddress();
         amount.validateAmount();
         require(tokenInfo[token].isSupported, "Token not supported");
@@ -155,9 +126,8 @@ contract AliothVault is ReentrancyGuard, Ownable {
             require(amount <= info.maxDeposit, "Exceeds maximum deposit");
         }
 
-        // Validate with Chainlink before deposit
         require(
-            enhancedYieldOptimizer.validateDepositWithChainlink(
+            aliothYieldOptimizer.validateDepositWithChainlink(
                 token,
                 amount,
                 targetProtocol
@@ -168,22 +138,19 @@ contract AliothVault is ReentrancyGuard, Ownable {
         uint256 fee = (amount * depositFee) / 10000;
         uint256 netAmount = amount - fee;
 
-        // Transfer tokens from user to vault
         ERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         if (fee > 0) {
             ERC20(token).safeTransfer(feeRecipient, fee);
         }
 
-        // Calculate shares based on current vault value
         shares = _calculateDepositShares(token, netAmount);
         require(shares >= minShares, "Insufficient shares received");
         require(shares >= MIN_SHARES, "Shares below minimum");
 
-        // Transfer tokens to optimizer for protocol deposit
-        ERC20(token).safeTransfer(address(enhancedYieldOptimizer), netAmount);
+        ERC20(token).safeTransfer(address(aliothYieldOptimizer), netAmount);
 
-        uint256 optimizationId = enhancedYieldOptimizer
+        uint256 optimizationId = aliothYieldOptimizer
             .executeSingleOptimizedDeposit(
                 token,
                 netAmount,
@@ -191,11 +158,9 @@ contract AliothVault is ReentrancyGuard, Ownable {
                 msg.sender
             );
 
-        // Mint receipt tokens to user
         AliothReceiptToken receiptToken = AliothReceiptToken(info.receiptToken);
         receiptToken.mint(msg.sender, shares);
 
-        // Update token info
         info.totalDeposits += amount;
 
         emit TokenDeposit(
@@ -216,12 +181,14 @@ contract AliothVault is ReentrancyGuard, Ownable {
      * @param token The token to withdraw
      * @param shares The number of receipt tokens to burn
      * @param minAmount Minimum amount expected (slippage protection)
+     * @param targetProtocol Target protocol ("aave", "compound", "yearn") to withdraw from
      * @return amount The amount of tokens received
      */
     function withdraw(
         address token,
         uint256 shares,
-        uint256 minAmount
+        uint256 minAmount,
+        string calldata targetProtocol
     ) external nonReentrant returns (uint256 amount) {
         token.validateAddress();
         shares.validateAmount();
@@ -235,27 +202,35 @@ contract AliothVault is ReentrancyGuard, Ownable {
             "Insufficient receipt tokens"
         );
 
-        // Calculate withdrawal amount
         amount = _calculateWithdrawAmount(token, shares);
         require(amount >= minAmount, "Amount below minimum");
 
-        // Calculate withdrawal fee
         uint256 fee = (amount * withdrawalFee) / 10000;
         uint256 netAmount = amount - fee;
 
-        // Burn receipt tokens
         receiptToken.burn(msg.sender, shares);
 
-        // For now, simplified withdrawal - in production would interact with protocols
-        // Transfer tokens to user (assuming vault has them available)
-        ERC20(token).safeTransfer(msg.sender, netAmount);
+        require(
+            aliothYieldOptimizer.validateDepositWithChainlink(
+                token,
+                amount,
+                targetProtocol
+            ),
+            "Chainlink validation failed"
+        );
 
-        // Send fee to recipient if applicable
+        uint256 withdrawnAmount = aliothYieldOptimizer.executeWithdrawal(
+            token,
+            amount,
+            targetProtocol,
+            msg.sender
+        );
+        require(withdrawnAmount >= netAmount, "Insufficient withdrawal amount");
+
         if (fee > 0) {
             ERC20(token).safeTransfer(feeRecipient, fee);
         }
 
-        // Update token info
         info.totalWithdrawals += amount;
 
         emit TokenWithdraw(
@@ -292,7 +267,6 @@ contract AliothVault is ReentrancyGuard, Ownable {
             string[] memory symbols
         )
     {
-        // Count non-zero positions
         uint256 count = 0;
         for (uint256 i = 0; i < supportedTokens.length; i++) {
             address token = supportedTokens[i];
@@ -304,14 +278,12 @@ contract AliothVault is ReentrancyGuard, Ownable {
             }
         }
 
-        // Allocate arrays
         tokens = new address[](count);
         receiptTokens = new address[](count);
         shares = new uint256[](count);
         values = new uint256[](count);
         symbols = new string[](count);
 
-        // Populate arrays
         uint256 index = 0;
         for (uint256 i = 0; i < supportedTokens.length; i++) {
             address token = supportedTokens[i];
@@ -327,10 +299,8 @@ contract AliothVault is ReentrancyGuard, Ownable {
                 shares[index] = userShares;
                 symbols[index] = info.symbol;
 
-                // Calculate current value (simplified for AI optimization)
                 uint256 totalSupply = receiptToken.totalSupply();
                 if (totalSupply > 0) {
-                    // For now, use 1:1 ratio - in production would query EnhancedYieldOptimizer
                     values[index] = userShares;
                 }
 
@@ -437,13 +407,9 @@ contract AliothVault is ReentrancyGuard, Ownable {
     function _calculateWithdrawAmount(
         address token,
         uint256 shares
-    ) internal view returns (uint256 amount) {
-        // For simplicity in AI optimization, use 1:1 ratio
-        // In production, would calculate based on actual protocol positions
+    ) internal pure returns (uint256 amount) {
         return shares;
     }
-
-    // ===== ADMIN FUNCTIONS =====
 
     /**
      * @notice Add support for a new token and create its receipt token
@@ -459,7 +425,6 @@ contract AliothVault is ReentrancyGuard, Ownable {
         token.validateAddress();
         require(!tokenInfo[token].isSupported, "Token already supported");
 
-        // Get token metadata
         ERC20 tokenContract = ERC20(token);
         string memory symbol;
         uint8 decimals;
@@ -476,14 +441,12 @@ contract AliothVault is ReentrancyGuard, Ownable {
             decimals = 18;
         }
 
-        // Create receipt token
         address receiptToken = receiptTokenFactory.createReceiptToken(
             token,
             symbol,
-            18
+            decimals
         );
 
-        // Store token info
         tokenInfo[token] = TokenInfo({
             isSupported: true,
             receiptToken: receiptToken,
@@ -495,7 +458,6 @@ contract AliothVault is ReentrancyGuard, Ownable {
             decimals: decimals
         });
 
-        // Add to supported tokens array
         tokenIndex[token] = supportedTokens.length;
         supportedTokens.push(token);
 
@@ -522,6 +484,9 @@ contract AliothVault is ReentrancyGuard, Ownable {
         delete tokenIndex[token];
 
         address receiptToken = tokenInfo[token].receiptToken;
+
+        receiptTokenFactory.removeReceiptToken(token);
+
         delete tokenInfo[token];
 
         emit TokenRemoved(token, receiptToken);
@@ -581,5 +546,35 @@ contract AliothVault is ReentrancyGuard, Ownable {
         address token
     ) external view returns (bool isSupported) {
         return tokenInfo[token].isSupported;
+    }
+
+    /**
+     * @notice Update min and max deposit limits for a supported token
+     * @param token The token address
+     * @param newMinDeposit New minimum deposit (in token's smallest unit)
+     * @param newMaxDeposit New maximum deposit (0 = no limit)
+     */
+    function updateTokenLimits(
+        address token,
+        uint256 newMinDeposit,
+        uint256 newMaxDeposit
+    ) external onlyOwner {
+        require(tokenInfo[token].isSupported, "Token not supported");
+
+        TokenInfo storage info = tokenInfo[token];
+
+        uint256 oldMin = info.minDeposit;
+        uint256 oldMax = info.maxDeposit;
+
+        info.minDeposit = newMinDeposit;
+        info.maxDeposit = newMaxDeposit;
+
+        emit TokenLimitsUpdated(
+            token,
+            oldMin,
+            oldMax,
+            newMinDeposit,
+            newMaxDeposit
+        );
     }
 }

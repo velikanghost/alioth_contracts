@@ -4,15 +4,12 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import "../libraries/DynamicAllocationLib.sol";
-import "../libraries/CrossTokenOperationsLib.sol";
 
 /**
- * @title EnhancedChainlinkFeedManager
- * @notice Enhanced Chainlink feed management
+ * @title ChainlinkFeedManager
+ * @notice Chainlink feed management
  */
-contract EnhancedChainlinkFeedManager is AccessControl {
-    using CrossTokenOperationsLib for *;
-
+contract ChainlinkFeedManager is AccessControl {
     bytes32 public constant FEED_MANAGER_ROLE = keccak256("FEED_MANAGER_ROLE");
 
     /// @notice Mapping from token address to its Chainlink feeds

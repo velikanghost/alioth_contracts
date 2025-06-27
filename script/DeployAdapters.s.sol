@@ -5,70 +5,54 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/adapters/AaveAdapter.sol";
 import "../src/adapters/CompoundAdapter.sol";
-import "../src/core/EnhancedYieldOptimizer.sol";
+import "../src/core/AliothYieldOptimizer.sol";
 
 /**
  * @title DeployAdapters
- * @notice Script to deploy protocol adapters and configure them with EnhancedYieldOptimizer
- * @dev Deploys Aave, Compound, and Yearn adapters based on network availability
+ * @notice Script to deploy protocol adapters and configure them with AliothYieldOptimizer
+ * @dev Deploys Aave and Compound adapters based on environment variables:
+ *      - DEPLOY_AAVE=true/false (default: false)
+ *      - DEPLOY_COMPOUND=true/false (default: false)
  */
 contract DeployAdapters is Script {
-    // ✅ ENHANCED YIELD OPTIMIZER ADDRESSES (DEPLOYED BY DeployAIIntegration.s.sol)
-    // UPDATE THESE ADDRESSES AFTER RUNNING DeployAIIntegration.s.sol
+    address constant ALIOTH_YIELD_OPTIMIZER_SEPOLIA =
+        0x3499331d4c0d88028a61bf1516246C29C30AFf8E;
+    address constant ALIOTH_YIELD_OPTIMIZER_BASE_SEPOLIA =
+        0x9F26D100fdB2Ca6810019062B9a3C6c01Afa21e6;
+    address constant ALIOTH_YIELD_OPTIMIZER_AVALANCHE_FUJI =
+        0x2F05369A361e7F452F5e5393a565D4d1cA88F80A;
 
-    // Sepolia Testnet
-    address constant ENHANCED_YIELD_OPTIMIZER_SEPOLIA =
-        0xDeE85d65aaDaff8e10164e05e0a8d2AD871e8db0;
-
-    // Arbitrum Sepolia Testnet
-    address constant ENHANCED_YIELD_OPTIMIZER_ARBITRUM_SEPOLIA =
-        0x0000000000000000000000000000000000000000;
-
-    // Base Sepolia Testnet
-    address constant ENHANCED_YIELD_OPTIMIZER_BASE_SEPOLIA =
-        0x0000000000000000000000000000000000000000;
-
-    // Avalanche Fuji Testnet
-    address constant ENHANCED_YIELD_OPTIMIZER_AVALANCHE_FUJI =
-        0x0000000000000000000000000000000000000000;
-
-    // 🏦 AAVE V3 POOL ADDRESSES (TESTNET SPECIFIC)
+    // 🏦 AAVE V3 POOL ADDRESSES
     address constant AAVE_POOL_SEPOLIA =
         0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
-    address constant AAVE_POOL_ARBITRUM_SEPOLIA =
-        0xBfC91D59fdAA134A4ED45f7B584cAf96D7792Eff;
-    address constant AAVE_POOL_BASE_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Not available
+    address constant AAVE_POOL_AVALANCHE_FUJI =
+        0xccEa5C65f6d4F465B71501418b88FBe4e7071283;
 
-    // 🏛️ COMPOUND PROTOCOL ADDRESSES (TESTNET SPECIFIC)
-    // Note: Compound V3 is not widely available on testnets - using mock addresses
-    address constant COMPOUND_COMPTROLLER_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Mock address
-    address constant COMPOUND_COMPTROLLER_ARBITRUM_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Mock address
-    address constant COMPOUND_COMPTROLLER_BASE_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Mock address
-    address constant COMPOUND_COMPTROLLER_AVALANCHE_FUJI =
-        0x0000000000000000000000000000000000000000; // Mock address
+    // 🏛️ COMPOUND III PROTOCOL ADDRESSES
+    address constant COMPOUND_COMET_SEPOLIA =
+        0xAec1F48e02Cfb822Be958B68C7957156EB3F0b6e; // cUSDCv3
+    address constant COMPOUND_REWARDS_SEPOLIA =
+        0x8bF5b658bdF0388E8b482ED51B14aef58f90abfD; // Rewards contract
+    address constant COMP_TOKEN_SEPOLIA =
+        0xA6c8D1c55951e8AC44a0EaA959Be5Fd21cc07531; // COMP token
 
-    // 🌾 YEARN PROTOCOL ADDRESSES (TESTNET SPECIFIC)
-    // Note: Yearn is not available on testnets - using mock addresses
-    address constant YEARN_REGISTRY_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Mock address
-    address constant YEARN_REGISTRY_ARBITRUM_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Mock address
-    address constant YEARN_REGISTRY_BASE_SEPOLIA =
-        0x0000000000000000000000000000000000000000; // Mock address
-    address constant YEARN_REGISTRY_AVALANCHE_FUJI =
-        0x0000000000000000000000000000000000000000; // Mock address
+    address constant COMPOUND_COMET_BASE_SEPOLIA =
+        0x571621Ce60Cebb0c1D442B5afb38B1663C6Bf017;
+    address constant COMPOUND_REWARDS_BASE_SEPOLIA =
+        0x3394fa1baCC0b47dd0fF28C8573a476a161aF7BC;
+    address constant COMP_TOKEN_BASE_SEPOLIA =
+        0x2f535da74048c0874400f0371Fba20DF983A56e2;
 
     struct DeploymentConfig {
-        address enhancedYieldOptimizer;
+        address aliothYieldOptimizer;
         address aavePool;
-        address compoundComptroller;
-        address yearnRegistry;
+        address compoundComet;
+        address compoundRewards;
+        address compToken;
         address admin;
         string networkName;
+        bool deployAave;
+        bool deployCompound;
     }
 
     struct DeployedAdapters {
@@ -77,25 +61,21 @@ contract DeployAdapters is Script {
     }
 
     function run() external {
-        // Get deployment configuration
         DeploymentConfig memory config = getDeploymentConfig();
 
         console.log("=== Deploying Protocol Adapters ===");
         console.log("Network:", config.networkName);
         console.log("Admin:", config.admin);
-        console.log("EnhancedYieldOptimizer:", config.enhancedYieldOptimizer);
+        console.log("AliothYieldOptimizer:", config.aliothYieldOptimizer);
+        console.log("Deploy Aave:", config.deployAave);
+        console.log("Deploy Compound:", config.deployCompound);
 
         vm.startBroadcast();
 
-        // Deploy adapters
         DeployedAdapters memory adapters = deployAdapters(config);
 
         vm.stopBroadcast();
 
-        // Configure adapters with EnhancedYieldOptimizer
-        configureAdapters(adapters, config);
-
-        // Log deployment addresses
         logDeployment(adapters, config);
     }
 
@@ -106,69 +86,92 @@ contract DeployAdapters is Script {
     {
         uint256 chainId = block.chainid;
 
-        // Get the actual deployer address (not DEFAULT_SENDER)
-        // In broadcast context, tx.origin is the actual signer
         address deployer = tx.origin;
-
-        // Get admin from environment or use deployer as fallback
         address admin = vm.envOr("ADMIN_ADDRESS", deployer);
 
+        bool deployAave = vm.envOr("DEPLOY_AAVE", false);
+        bool deployCompound = vm.envOr("DEPLOY_COMPOUND", false);
+
         if (chainId == 11155111) {
-            // Ethereum Sepolia
             config = DeploymentConfig({
-                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_SEPOLIA,
+                aliothYieldOptimizer: ALIOTH_YIELD_OPTIMIZER_SEPOLIA,
                 aavePool: AAVE_POOL_SEPOLIA,
-                compoundComptroller: COMPOUND_COMPTROLLER_SEPOLIA,
-                yearnRegistry: YEARN_REGISTRY_SEPOLIA,
+                compoundComet: COMPOUND_COMET_SEPOLIA,
+                compoundRewards: COMPOUND_REWARDS_SEPOLIA,
+                compToken: COMP_TOKEN_SEPOLIA,
                 admin: admin,
-                networkName: "Sepolia"
-            });
-        } else if (chainId == 421614) {
-            // Arbitrum Sepolia
-            config = DeploymentConfig({
-                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_ARBITRUM_SEPOLIA,
-                aavePool: AAVE_POOL_ARBITRUM_SEPOLIA,
-                compoundComptroller: COMPOUND_COMPTROLLER_ARBITRUM_SEPOLIA,
-                yearnRegistry: YEARN_REGISTRY_ARBITRUM_SEPOLIA,
-                admin: admin,
-                networkName: "Arbitrum Sepolia"
+                networkName: "Sepolia",
+                deployAave: deployAave,
+                deployCompound: deployCompound
             });
         } else if (chainId == 84532) {
-            // Base Sepolia
             config = DeploymentConfig({
-                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_BASE_SEPOLIA,
-                aavePool: AAVE_POOL_BASE_SEPOLIA, // Not available
-                compoundComptroller: COMPOUND_COMPTROLLER_BASE_SEPOLIA,
-                yearnRegistry: YEARN_REGISTRY_BASE_SEPOLIA,
+                aliothYieldOptimizer: ALIOTH_YIELD_OPTIMIZER_BASE_SEPOLIA,
+                aavePool: 0x0000000000000000000000000000000000000000,
+                compoundComet: COMPOUND_COMET_BASE_SEPOLIA,
+                compoundRewards: COMPOUND_REWARDS_BASE_SEPOLIA,
+                compToken: COMP_TOKEN_BASE_SEPOLIA,
                 admin: admin,
-                networkName: "Base Sepolia"
+                networkName: "Base Sepolia",
+                deployAave: deployAave,
+                deployCompound: deployCompound
             });
         } else if (chainId == 43113) {
-            // Avalanche Fuji
             config = DeploymentConfig({
-                enhancedYieldOptimizer: ENHANCED_YIELD_OPTIMIZER_AVALANCHE_FUJI,
-                aavePool: address(0), // Not available
-                compoundComptroller: COMPOUND_COMPTROLLER_AVALANCHE_FUJI,
-                yearnRegistry: YEARN_REGISTRY_AVALANCHE_FUJI,
+                aliothYieldOptimizer: ALIOTH_YIELD_OPTIMIZER_AVALANCHE_FUJI,
+                aavePool: AAVE_POOL_AVALANCHE_FUJI,
+                compoundComet: 0x0000000000000000000000000000000000000000,
+                compoundRewards: 0x0000000000000000000000000000000000000000,
+                compToken: 0x0000000000000000000000000000000000000000,
                 admin: admin,
-                networkName: "Avalanche Fuji"
+                networkName: "Avalanche Fuji",
+                deployAave: deployAave,
+                deployCompound: deployCompound
             });
         } else {
             revert(
-                "Unsupported network - only Sepolia, Arbitrum Sepolia, Base Sepolia, and Avalanche Fuji are supported"
+                "Unsupported network - only Sepolia, Arbitrum Sepolia, and Base Sepolia are supported"
             );
         }
 
         require(
-            config.enhancedYieldOptimizer != address(0),
+            config.aliothYieldOptimizer != address(0),
             string(
                 abi.encodePacked(
-                    "EnhancedYieldOptimizer not configured for ",
+                    "AliothYieldOptimizer not configured for ",
                     config.networkName,
                     ". Please update the constant in this script."
                 )
             )
         );
+
+        if (config.deployAave) {
+            require(
+                config.aavePool != address(0),
+                string(
+                    abi.encodePacked(
+                        "Aave Pool not configured for ",
+                        config.networkName,
+                        ". Cannot deploy AaveAdapter."
+                    )
+                )
+            );
+        }
+
+        if (config.deployCompound) {
+            require(
+                config.compoundComet != address(0) &&
+                    config.compoundRewards != address(0) &&
+                    config.compToken != address(0),
+                string(
+                    abi.encodePacked(
+                        "Compound III addresses not configured for ",
+                        config.networkName,
+                        ". Cannot deploy CompoundAdapter."
+                    )
+                )
+            );
+        }
     }
 
     function deployAdapters(
@@ -176,13 +179,9 @@ contract DeployAdapters is Script {
     ) internal returns (DeployedAdapters memory adapters) {
         console.log("\n=== Deploying Protocol Adapters ===");
 
-        // Get the actual broadcaster address (tx.origin in broadcast context)
-        address deployer = tx.origin;
-        console.log("Deployer (from tx.origin):", deployer);
         console.log("Configured Admin:", config.admin);
 
-        // 1. Deploy Aave Adapter (if available on network)
-        if (config.aavePool != address(0)) {
+        if (config.deployAave && config.aavePool != address(0)) {
             console.log("1. Deploying AaveAdapter...");
             adapters.aaveAdapter = new AaveAdapter(
                 config.aavePool,
@@ -193,53 +192,31 @@ contract DeployAdapters is Script {
                 address(adapters.aaveAdapter)
             );
         } else {
-            console.log(
-                "1. Skipping AaveAdapter - not available on this network"
-            );
+            console.log("1. Skipping AaveAdapter deployment");
         }
 
-        // 2. Skip CompoundAdapter - not available on testnets
-        console.log("2. Skipping CompoundAdapter - not available on testnets");
-
-        // 3. Skip YearnAdapter - not available on testnets
-        console.log("3. Skipping YearnAdapter - not available on testnets");
+        if (
+            config.deployCompound &&
+            config.compoundComet != address(0) &&
+            config.compoundRewards != address(0) &&
+            config.compToken != address(0)
+        ) {
+            console.log("2. Deploying CompoundAdapter...");
+            adapters.compoundAdapter = new CompoundAdapter(
+                config.compoundComet,
+                config.compoundRewards,
+                config.compToken,
+                config.admin
+            );
+            console.log(
+                "   CompoundAdapter deployed at:",
+                address(adapters.compoundAdapter)
+            );
+        } else {
+            console.log("2. Skipping CompoundAdapter deployment");
+        }
 
         console.log("Adapter deployment completed!");
-    }
-
-    function configureAdapters(
-        DeployedAdapters memory adapters,
-        DeploymentConfig memory config
-    ) internal pure {
-        console.log(
-            "\n=== Configuring Adapters with EnhancedYieldOptimizer ==="
-        );
-
-        // Note: This requires admin privileges on EnhancedYieldOptimizer
-        // The admin needs to call these functions manually or grant deployer admin role
-
-        if (address(adapters.aaveAdapter) != address(0)) {
-            console.log("Configuration required for AaveAdapter:");
-            console.log("Run this command with admin wallet:");
-            console.log(
-                string(
-                    abi.encodePacked(
-                        "cast send ",
-                        vm.toString(config.enhancedYieldOptimizer),
-                        ' "addProtocol(address)" ',
-                        vm.toString(address(adapters.aaveAdapter)),
-                        " --rpc-url RPC_URL --account ADMIN_ACCOUNT"
-                    )
-                )
-            );
-        }
-
-        console.log(
-            "\nIMPORTANT: Adapter configuration requires manual admin actions!"
-        );
-        console.log(
-            "See the commands above to add adapters to EnhancedYieldOptimizer."
-        );
     }
 
     function logDeployment(
@@ -249,72 +226,45 @@ contract DeployAdapters is Script {
         console.log("\n=== Protocol Adapters Deployment Summary ===");
         console.log("Network:", config.networkName);
         console.log("Admin:", config.admin);
-        console.log("EnhancedYieldOptimizer:", config.enhancedYieldOptimizer);
+        console.log("AliothYieldOptimizer:", config.aliothYieldOptimizer);
         console.log("");
         console.log("Deployed Adapters:");
 
-        if (address(adapters.aaveAdapter) != address(0)) {
-            console.log("  AaveAdapter:", address(adapters.aaveAdapter));
+        if (config.deployAave) {
+            if (address(adapters.aaveAdapter) != address(0)) {
+                console.log("  AaveAdapter:", address(adapters.aaveAdapter));
+            } else {
+                console.log(
+                    "  AaveAdapter: Not deployed (unavailable on this network)"
+                );
+            }
         } else {
-            console.log(
-                "  AaveAdapter: Not deployed (unavailable on this network)"
-            );
+            console.log("  AaveAdapter: Skipped");
         }
 
-        console.log(
-            "  CompoundAdapter: Not deployed (unavailable on testnets)"
-        );
-        console.log("  YearnAdapter: Not deployed (unavailable on testnets)");
-        console.log("");
-        console.log("=== Adapter Deployment Completed Successfully! ===");
-        console.log("");
-        console.log("Next Steps:");
-        console.log(
-            "1. Configure adapters with EnhancedYieldOptimizer (see commands above)"
-        );
-        console.log("2. Test adapter functionality");
-        console.log("3. Monitor adapter performance");
-        console.log("4. Set up yield optimization parameters");
-        console.log("");
-        console.log("IMPORTANT: Save these addresses for configuration:");
-        if (address(adapters.aaveAdapter) != address(0)) {
-            console.log("export AAVE_ADAPTER=", address(adapters.aaveAdapter));
+        if (config.deployCompound) {
+            if (address(adapters.compoundAdapter) != address(0)) {
+                console.log(
+                    "  CompoundAdapter:",
+                    address(adapters.compoundAdapter)
+                );
+            } else {
+                console.log(
+                    "  CompoundAdapter: Not deployed (unavailable on this network)"
+                );
+            }
+        } else {
+            console.log("  CompoundAdapter: Skipped");
         }
-    }
-
-    /**
-     * @notice Deploy to localhost/anvil for testing
-     */
-    function runLocal() external {
-        // For local testing, use environment variables
-        address enhancedYieldOptimizerAddr = vm.envOr(
-            "ENHANCED_YIELD_OPTIMIZER_ADDRESS",
-            address(0)
-        );
-        require(
-            enhancedYieldOptimizerAddr != address(0),
-            "Set ENHANCED_YIELD_OPTIMIZER_ADDRESS env var for local testing"
-        );
-
-        vm.startBroadcast();
-
-        // Use tx.origin as admin for local testing
-        address admin = tx.origin;
-
-        // Deploy mock Aave adapter for local testing
-        AaveAdapter aaveAdapter = new AaveAdapter(address(0x1), admin);
-
-        console.log("Local AaveAdapter deployed at:", address(aaveAdapter));
-        console.log("Admin:", admin);
-        console.log("EnhancedYieldOptimizer:", enhancedYieldOptimizerAddr);
-
-        vm.stopBroadcast();
     }
 
     /**
      * @notice Verify adapter deployment
      */
-    function verifyDeployment(address aaveAdapterAddress) external view {
+    function verifyDeployment(
+        address aaveAdapterAddress,
+        address compoundAdapterAddress
+    ) external view {
         if (aaveAdapterAddress != address(0)) {
             AaveAdapter adapter = AaveAdapter(aaveAdapterAddress);
 
@@ -322,6 +272,16 @@ contract DeployAdapters is Script {
             console.log("Adapter Address:", aaveAdapterAddress);
             console.log("Protocol Name:", adapter.protocolName());
             console.log("Aave Pool:", address(adapter.aavePool()));
+        }
+
+        if (compoundAdapterAddress != address(0)) {
+            CompoundAdapter adapter = CompoundAdapter(compoundAdapterAddress);
+
+            console.log("\n=== Compound Adapter Verification ===");
+            console.log("Adapter Address:", compoundAdapterAddress);
+            console.log("Protocol Name:", adapter.protocolName());
+            console.log("Comet Address:", adapter.getCometAddress());
+            console.log("Base Asset:", adapter.getBaseAsset());
         }
     }
 }
