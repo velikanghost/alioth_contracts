@@ -26,6 +26,8 @@ contract DeployAggregators is Script {
 
     struct DeployedAggregators {
         MockV3Aggregator usdcFeed;
+        MockV3Aggregator linkFeed;
+        MockV3Aggregator ethFeed;
     }
 
     function setUp() public {}
@@ -91,24 +93,47 @@ contract DeployAggregators is Script {
     {
         console.log("\n=== Deploying Mock Aggregators ===");
 
-        // Define aggregator configuration
-        AggregatorConfig[1] memory configs = [
-            AggregatorConfig({
-                symbol: "USDC",
-                decimals: 8,
-                initialPrice: 100000000, // $1.00 with 8 decimals
-                description: "Mock USDC/USD Price Feed"
-            })
-        ];
+        uint256 chainId = block.chainid;
 
-        // Deploy USDC aggregator
-        console.log("1. Deploying USDC/USD aggregator...");
-        aggregators.usdcFeed = new MockV3Aggregator(
-            configs[0].decimals,
-            configs[0].initialPrice,
-            PRICE_UPDATE_INTERVAL
-        );
-        console.log("   USDC/USD:", address(aggregators.usdcFeed));
+        if (chainId == 11155111 || chainId == 84532) {
+            console.log("1. Deploying USDC/USD aggregator...");
+            aggregators.usdcFeed = new MockV3Aggregator(
+                6,
+                1e6,
+                PRICE_UPDATE_INTERVAL
+            );
+            console.log("   USDC/USD:", address(aggregators.usdcFeed));
+        } else if (chainId == 43113) {
+            console.log("1. Deploying USDC/USD aggregator...");
+            aggregators.usdcFeed = new MockV3Aggregator(
+                6,
+                1e6,
+                PRICE_UPDATE_INTERVAL
+            );
+            console.log("   USDC/USD:", address(aggregators.usdcFeed));
+
+            console.log("2. Deploying LINK/USD aggregator...");
+            aggregators.linkFeed = new MockV3Aggregator(
+                18,
+                15 * 1e18,
+                PRICE_UPDATE_INTERVAL
+            );
+            console.log("   LINK/USD:", address(aggregators.linkFeed));
+
+            console.log("3. Deploying ETH/USD aggregator...");
+            aggregators.ethFeed = new MockV3Aggregator(
+                18,
+                3000 * 1e18,
+                PRICE_UPDATE_INTERVAL
+            );
+            console.log("   ETH/USD:", address(aggregators.ethFeed));
+        }
+        // ────────────────────── Unsupported ────────────────────────────────
+        else {
+            revert(
+                "Unsupported network. No aggregators configured for this chain ID."
+            );
+        }
     }
 
     /**
@@ -123,7 +148,24 @@ contract DeployAggregators is Script {
         console.log("Admin:", config.admin);
         console.log("");
         console.log("Deployed Mock Price Feeds (50-min auto-update):");
-        console.log("  USDC/USD (8 decimals):", address(aggregators.usdcFeed));
+        if (address(aggregators.usdcFeed) != address(0)) {
+            console.log(
+                "  USDC/USD (6 decimals):",
+                address(aggregators.usdcFeed)
+            );
+        }
+        if (address(aggregators.linkFeed) != address(0)) {
+            console.log(
+                "  LINK/USD (18 decimals):",
+                address(aggregators.linkFeed)
+            );
+        }
+        if (address(aggregators.ethFeed) != address(0)) {
+            console.log(
+                "  ETH/USD (18 decimals):",
+                address(aggregators.ethFeed)
+            );
+        }
         console.log("");
         console.log("Next Steps:");
         console.log(
