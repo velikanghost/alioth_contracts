@@ -25,6 +25,10 @@ Alioth delivers:
 4. **Automation for Test Feeds (Live)** – `MockV3Aggregator` keeps demo price feeds fresh with Chainlink Automation.
 5. **Automated Rebalancing (Planned)** – Upkeep stubs are ready; v0.2 will introduce on-chain liquidity migration.
 
+<div align="center">
+  <img src="img/draw.png" alt="YieldStark Logo" width="200" height="200"/>
+</div>
+
 ---
 
 ## 1️⃣ Why Alioth?
@@ -34,7 +38,6 @@ Current yield aggregators are usually locked to a single chain, rely on off-chai
 1. **On-Chain Portfolio Logic** – Solidity contracts that hold assets and talk to protocol adapters (Aave, Compound, …).
 2. **Chainlink Feeds & Automation** – Reliable APY / price data and keeper-style jobs that trigger rebalances.
 3. **Chainlink CCIP** – Trust-minimised cross-chain messaging & token transfers so the optimiser can chase yields on any supported network.
-4. **Optional AI Agent (off-chain)** – _not required for judging;_ all critical portfolio logic lives **on-chain**. No backend setup is necessary for the demo.
 
 ---
 
