@@ -26,7 +26,7 @@ Alioth delivers:
 5. **Automated Rebalancing (Planned)** – Upkeep stubs are ready; v0.2 will introduce on-chain liquidity migration.
 
 <div align="center">
-  <img src="img/draw.png" alt="YieldStark Logo" width="200" height="200"/>
+  <img src="img/draw.png" alt="YieldStark Logo" width="600" height="400"/>
 </div>
 
 ---
